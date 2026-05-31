@@ -47,3 +47,10 @@ option(
   value       : 'localhost',
   description : 'Fallback hostname reported when /etc/hostname is absent',
 )
+
+option(
+  'privileged-group',
+  type : 'string',
+  value : 'wheel',
+  description : 'Group allowed to change hostname without authentication'
+)
