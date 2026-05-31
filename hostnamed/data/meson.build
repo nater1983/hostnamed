@@ -95,6 +95,24 @@ if polkit_found
   )
 endif
 
+# ─── Polkit rules (group override) ──────────────────────────────────────────
+
+rules_conf = configuration_data()
+rules_conf.set('PRIVILEGED_GROUP', get_option('privileged-group'))
+
+rules_file = configure_file(
+  input : 'org.freedesktop.hostname1.rules.in',
+  output : 'org.freedesktop.hostname1.rules',
+  configuration : rules_conf
+)
+
+polkit_rules_dir = join_paths(prefix, datadir, 'polkit-1', 'rules.d')
+
+install_data(
+  rules_file,
+  install_dir : polkit_rules_dir
+)
+
 # ─── Summary ──────────────────────────────────────────────────────────────────
 
 summary({
