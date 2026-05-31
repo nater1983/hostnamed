@@ -66,7 +66,7 @@ endif
 # a method on org.freedesktop.hostname1.
 
 dbus_service_conf = configuration_data()
-dbus_service_conf.set('SBINDIR', join_paths(prefix, get_option('sbindir')))
+dbus_service_conf.set('SBINDIR', join_paths(prefix, get_option('libexecdir')))
 
 configure_file(
   input         : 'org.freedesktop.hostname1.service.in',
