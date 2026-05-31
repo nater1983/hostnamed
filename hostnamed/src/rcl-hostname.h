@@ -38,6 +38,16 @@ G_BEGIN_DECLS
 typedef struct _RclDaemon      RclDaemon;
 typedef struct _RclDaemonClass RclDaemonClass;
 
+struct _RclDaemon
+{
+  GObject parent_instance;
+};
+
+struct _RclDaemonClass
+{
+  GObjectClass parent_class;
+};
+
 GType      rcl_daemon_get_type   ( void ) G_GNUC_CONST;
 RclDaemon *rcl_daemon_new        ( void );
 gboolean   rcl_daemon_startup    ( RclDaemon *daemon, GDBusConnection *connection );
