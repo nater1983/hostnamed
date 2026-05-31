@@ -77,7 +77,7 @@ rcl_main_bus_acquired( GDBusConnection *connection,
   if( !rcl_daemon_startup( state->daemon, connection ) )
   {
     g_warning( "Could not startup daemon" );
-    g_main_loop_quit( state->loop );
+    return;
   }
 }
 
@@ -102,7 +102,7 @@ rcl_main_name_lost( GDBusConnection *connection,
 {
   RclState *state = user_data;
   g_debug( "Name lost, exiting" );
-  g_main_loop_quit( state->loop );
+  g_warning("D-Bus name lost: %s", name);
 }
 
 /*********************
