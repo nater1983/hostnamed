@@ -39,13 +39,14 @@ option(
               + '(default: <datadir>/polkit-1/actions)',
 )
 
-# Default hostname written to config.h so the daemon can report it on systems
-# where /etc/hostname does not exist yet.
+# Path to the hostname configuration file.  The freedesktop/systemd convention
+# is /etc/hostname; Slackware uses /etc/HOSTNAME.  Stored in config.h as
+# HOSTNAME_FILE and used everywhere the daemon reads or writes the hostname.
 option(
-  'default_hostname',
+  'HOSTNAME',
   type        : 'string',
-  value       : 'localhost',
-  description : 'Fallback hostname reported when /etc/hostname is absent',
+  value       : '/etc/HOSTNAME',
+  description : 'Path to the hostname config file',
 )
 
 option(
