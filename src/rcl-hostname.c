@@ -21,6 +21,7 @@
 #include "config.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <string.h>
 #include <sys/utsname.h>
 #include <unistd.h>
@@ -516,6 +517,66 @@ write_machine_info_key( const gchar  *key,
 }
 
 /* --------------------------------------------------------------------------
+   Input validation
+
+   All Set* arguments arrive from untrusted D-Bus callers.  D-Bus strings may
+   not contain a NUL byte, but they CAN contain newlines, quotes and other
+   control characters, so every value must be validated before it is written
+   to sethostname(2), /etc/HOSTNAME or /etc/machine-info.
+   -------------------------------------------------------------------------- */
+
+/* Hostnames: RFC 1123 labels joined by dots, max HOST_NAME_MAX bytes.
+   Permits ASCII letters, digits, '-' and '.'; rejects empty, over-length,
+   leading/trailing dot and anything else.  Mirrors systemd's hostname_is_valid. */
+static gboolean
+rcl_hostname_is_valid( const gchar *name )
+{
+  gsize len, i;
+
+  if( !name )
+    return FALSE;
+
+  len = strlen( name );
+  if( len == 0 || len > HOST_NAME_MAX )      /* HOST_NAME_MAX from <limits.h> */
+    return FALSE;
+
+  if( name[0] == '.' || name[len - 1] == '.' )
+    return FALSE;
+
+  for( i = 0; i < len; i++ )
+  {
+    gchar c = name[i];
+    if( !( g_ascii_isalnum(c) || c == '-' || c == '.' ) )
+      return FALSE;
+  }
+  return TRUE;
+}
+
+/* Free-form /etc/machine-info values (PrettyHostname, Location, Deployment,
+   IconName, Chassis).  Reject control characters – including newline – and the
+   quote/backslash characters that would let a caller break out of the
+   KEY="value" quoting and inject extra lines.  Empty string is allowed and
+   means "unset the key". */
+static gboolean
+rcl_machine_info_value_is_safe( const gchar *value )
+{
+  const gchar *p;
+
+  if( !value )
+    return FALSE;
+
+  for( p = value; *p; p++ )
+  {
+    guchar c = (guchar) *p;
+    if( c < 0x20 || c == 0x7f )   /* C0 control chars + DEL (covers '\n','\r','\t') */
+      return FALSE;
+    if( c == '"' || c == '\\' )   /* would break KEY="value" quoting */
+      return FALSE;
+  }
+  return TRUE;
+}
+
+/* --------------------------------------------------------------------------
    Polkit authorisation helper
    -------------------------------------------------------------------------- */
 static gboolean
@@ -555,8 +616,13 @@ check_polkit( GDBusMethodInvocation *invocation,
   }
   else
   {
-    authorised = polkit_authorization_result_get_is_authorized( result ) ||
-                 polkit_authorization_result_get_is_challenge( result );
+    /* SECURITY: only is_authorized means the caller is allowed.  is_challenge
+       means "authentication is required but has not happened yet" – treating
+       it as authorised lets a non-interactive (interactive=FALSE) caller, or a
+       caller who cancels the polkit dialog, bypass authentication entirely.
+       When ALLOW_USER_INTERACTION is set, check_authorization_sync() has
+       already driven the dialog and reflects the outcome in is_authorized. */
+    authorised = polkit_authorization_result_get_is_authorized( result );
     if( !authorised )
       g_set_error( error, G_DBUS_ERROR, G_DBUS_ERROR_AUTH_FAILED,
                    "Not authorised to perform action '%s'", action_id );
@@ -662,6 +728,12 @@ handle_method_call( GDBusConnection       *connection,
 
     if( name && name[0] != '\0' )
     {
+      if( !rcl_hostname_is_valid(name) )
+      {
+        g_set_error( &error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
+                     "Invalid hostname '%s'", name );
+        goto method_error;
+      }
       if( sethostname(name, strlen(name)) != 0 )
       {
         g_set_error( &error, G_IO_ERROR, g_io_error_from_errno(errno),
@@ -690,6 +762,12 @@ handle_method_call( GDBusConnection       *connection,
 
     if( name && name[0] != '\0' )
     {
+      if( !rcl_hostname_is_valid(name) )
+      {
+        g_set_error( &error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
+                     "Invalid static hostname '%s'", name );
+        goto method_error;
+      }
       gchar *content = g_strdup_printf( "%s\n", name );
       if( !g_file_set_contents(RCL_HOSTNAME_FILE, content, -1, &error) )
       {
@@ -734,6 +812,14 @@ handle_method_call( GDBusConnection       *connection,
       if( !check_polkit(invocation, RCL_HOSTNAME_POLKIT_SET_MACHINE_INFO,
                         interactive, &error) )
         goto method_error;
+
+      if( !rcl_machine_info_value_is_safe(name) )
+      {
+        g_set_error( &error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
+                     "Invalid value for %s: control characters and quotes are not allowed",
+                     key );
+        goto method_error;
+      }
 
       if( !write_machine_info_key(key, name, &error) )
         goto method_error;
