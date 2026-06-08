@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023 Andrey V.Kosteltsev <kx@radix.pro>
+ * Copyright (C) 2026 Nathaniel Russell <naterussell83@gmail.com>
  *
  * Licensed under the GNU General Public License Version 2
  *
