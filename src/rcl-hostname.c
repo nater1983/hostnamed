@@ -20,10 +20,12 @@
 
 #include "config.h"
 
+#define _GNU_SOURCE   /* for timegm(3) */
 #include <errno.h>
 #include <limits.h>
 #include <string.h>
 #include <sys/utsname.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <gio/gio.h>
@@ -64,7 +66,7 @@ static const gchar hostname1_introspection_xml[] =
   "    <property name='HardwareVendor'              type='s' access='read'/>"
   "    <property name='HardwareModel'               type='s' access='read'/>"
   "    <property name='FirmwareVersion'             type='s' access='read'/>"
-  "    <property name='FirmwareDate'                type='s' access='read'/>"
+  "    <property name='FirmwareDate'                type='t' access='read'/>"
   /* ---- methods ---- */
   "    <method name='SetHostname'>"
   "      <arg name='name'        type='s' direction='in'/>"
@@ -136,8 +138,8 @@ struct _RclHostnameDaemonPrivate
   gchar *os_home_url;
   gchar *hw_vendor;
   gchar *hw_model;
-  gchar *firmware_version;
-  gchar *firmware_date;
+  gchar   *firmware_version;
+  guint64  firmware_date_usec;   /* µs since Unix epoch; G_MAXUINT64 = unknown */
 };
 
 /* --------------------------------------------------------------------------
@@ -279,6 +281,38 @@ read_dmi( const gchar *path )
 }
 
 /* --------------------------------------------------------------------------
+   FirmwareDate parser
+
+   /sys/class/dmi/id/bios_date contains MM/DD/YYYY.  The D-Bus property is
+   spec'd as type 't' (uint64 µs since the Unix epoch, UTC).  Return
+   G_MAXUINT64 when the date is absent or unparseable.
+   -------------------------------------------------------------------------- */
+static guint64
+parse_firmware_date_usec (const gchar *date_str)
+{
+  int month = 0, day = 0, year = 0;
+  struct tm tm;
+  time_t t;
+
+  if (!date_str || date_str[0] == '\0')
+    return G_MAXUINT64;
+
+  if (sscanf (date_str, "%d/%d/%d", &month, &day, &year) != 3)
+    return G_MAXUINT64;
+
+  memset (&tm, 0, sizeof (tm));
+  tm.tm_year = year - 1900;
+  tm.tm_mon  = month - 1;
+  tm.tm_mday = day;
+
+  t = timegm (&tm);          /* GNU extension; interprets tm as UTC */
+  if (t == (time_t) -1)
+    return G_MAXUINT64;
+
+  return (guint64) t * G_USEC_PER_SEC;
+}
+
+/* --------------------------------------------------------------------------
    Property refresh
    -------------------------------------------------------------------------- */
 
@@ -412,7 +446,21 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
   UPDATE_STR_PROP( hw_vendor,        read_dmi(RCL_DMI_BOARD_VENDOR),  "HardwareVendor" );
   UPDATE_STR_PROP( hw_model,         read_dmi(RCL_DMI_PRODUCT_NAME),  "HardwareModel" );
   UPDATE_STR_PROP( firmware_version, read_dmi(RCL_DMI_BIOS_VERSION),  "FirmwareVersion" );
-  UPDATE_STR_PROP( firmware_date,    read_dmi(RCL_DMI_BIOS_DATE),     "FirmwareDate" );
+
+  /* FirmwareDate is type 't' (uint64 µs since epoch) per the spec */
+  {
+    gchar   *date_str = read_dmi (RCL_DMI_BIOS_DATE);
+    guint64  new_usec = parse_firmware_date_usec (date_str);
+    g_free (date_str);
+
+    if (priv->firmware_date_usec != new_usec)
+      {
+        priv->firmware_date_usec = new_usec;
+        g_variant_builder_add (&changed_props, "{sv}", "FirmwareDate",
+                               g_variant_new_uint64 (new_usec));
+        any_changed = TRUE;
+      }
+  }
 
 #undef UPDATE_STR_PROP
 
@@ -518,16 +566,8 @@ write_machine_info_key( const gchar  *key,
 
 /* --------------------------------------------------------------------------
    Input validation
-
-   All Set* arguments arrive from untrusted D-Bus callers.  D-Bus strings may
-   not contain a NUL byte, but they CAN contain newlines, quotes and other
-   control characters, so every value must be validated before it is written
-   to sethostname(2), /etc/HOSTNAME or /etc/machine-info.
    -------------------------------------------------------------------------- */
 
-/* Hostnames: RFC 1123 labels joined by dots, max HOST_NAME_MAX bytes.
-   Permits ASCII letters, digits, '-' and '.'; rejects empty, over-length,
-   leading/trailing dot and anything else.  Mirrors systemd's hostname_is_valid. */
 static gboolean
 rcl_hostname_is_valid( const gchar *name )
 {
@@ -537,7 +577,7 @@ rcl_hostname_is_valid( const gchar *name )
     return FALSE;
 
   len = strlen( name );
-  if( len == 0 || len > HOST_NAME_MAX )      /* HOST_NAME_MAX from <limits.h> */
+  if( len == 0 || len > HOST_NAME_MAX )
     return FALSE;
 
   if( name[0] == '.' || name[len - 1] == '.' )
@@ -552,11 +592,6 @@ rcl_hostname_is_valid( const gchar *name )
   return TRUE;
 }
 
-/* Free-form /etc/machine-info values (PrettyHostname, Location, Deployment,
-   IconName, Chassis).  Reject control characters – including newline – and the
-   quote/backslash characters that would let a caller break out of the
-   KEY="value" quoting and inject extra lines.  Empty string is allowed and
-   means "unset the key". */
 static gboolean
 rcl_machine_info_value_is_safe( const gchar *value )
 {
@@ -568,9 +603,9 @@ rcl_machine_info_value_is_safe( const gchar *value )
   for( p = value; *p; p++ )
   {
     guchar c = (guchar) *p;
-    if( c < 0x20 || c == 0x7f )   /* C0 control chars + DEL (covers '\n','\r','\t') */
+    if( c < 0x20 || c == 0x7f )
       return FALSE;
-    if( c == '"' || c == '\\' )   /* would break KEY="value" quoting */
+    if( c == '"' || c == '\\' )
       return FALSE;
   }
   return TRUE;
@@ -616,12 +651,6 @@ check_polkit( GDBusMethodInvocation *invocation,
   }
   else
   {
-    /* SECURITY: only is_authorized means the caller is allowed.  is_challenge
-       means "authentication is required but has not happened yet" – treating
-       it as authorised lets a non-interactive (interactive=FALSE) caller, or a
-       caller who cancels the polkit dialog, bypass authentication entirely.
-       When ALLOW_USER_INTERACTION is set, check_authorization_sync() has
-       already driven the dialog and reflects the outcome in is_authorized. */
     authorised = polkit_authorization_result_get_is_authorized( result );
     if( !authorised )
       g_set_error( error, G_DBUS_ERROR, G_DBUS_ERROR_AUTH_FAILED,
@@ -671,7 +700,8 @@ handle_get_property( GDBusConnection  *connection,
   if( g_strcmp0(property_name, "HardwareVendor"            ) == 0 ) RETURN_STR(hw_vendor);
   if( g_strcmp0(property_name, "HardwareModel"             ) == 0 ) RETURN_STR(hw_model);
   if( g_strcmp0(property_name, "FirmwareVersion"           ) == 0 ) RETURN_STR(firmware_version);
-  if( g_strcmp0(property_name, "FirmwareDate"              ) == 0 ) RETURN_STR(firmware_date);
+  if( g_strcmp0(property_name, "FirmwareDate"              ) == 0 )
+    return g_variant_new_uint64 (priv->firmware_date_usec);
 
 #undef RETURN_STR
 
@@ -713,9 +743,6 @@ handle_method_call( GDBusConnection       *connection,
   RclHostnameDaemonPrivate *priv   = daemon->priv;
   GError *error = NULL;
 
-  /* ------------------------------------------------------------------
-     SetHostname – sets transient hostname via sethostname(2)
-     ------------------------------------------------------------------ */
   if( g_strcmp0(method_name, "SetHostname") == 0 )
   {
     const gchar *name;
@@ -747,9 +774,6 @@ handle_method_call( GDBusConnection       *connection,
     return;
   }
 
-  /* ------------------------------------------------------------------
-     SetStaticHostname – writes /etc/hostname
-     ------------------------------------------------------------------ */
   if( g_strcmp0(method_name, "SetStaticHostname") == 0 )
   {
     const gchar *name;
@@ -776,12 +800,10 @@ handle_method_call( GDBusConnection       *connection,
       }
       g_free( content );
 
-      /* Also push to transient hostname so they stay in sync */
       sethostname( name, strlen(name) );
     }
     else
     {
-      /* Empty string – remove static hostname file */
       g_unlink( RCL_HOSTNAME_FILE );
     }
 
@@ -790,10 +812,6 @@ handle_method_call( GDBusConnection       *connection,
     return;
   }
 
-  /* ------------------------------------------------------------------
-     SetPrettyHostname / SetIconName / SetChassis / SetDeployment / SetLocation
-     – all write a key to /etc/machine-info
-     ------------------------------------------------------------------ */
   {
     const gchar *key = NULL;
     const gchar *name;
@@ -830,16 +848,12 @@ handle_method_call( GDBusConnection       *connection,
     }
   }
 
-  /* ------------------------------------------------------------------
-     GetProductUUID – returns bytes from /sys/class/dmi/id/product_uuid
-     ------------------------------------------------------------------ */
   if( g_strcmp0(method_name, "GetProductUUID") == 0 )
   {
     gboolean interactive;
     g_variant_get( parameters, "(b)", &interactive );
 
-    /* Reading product_uuid requires root on most systems; use polkit */
-    if( !check_polkit(invocation, RCL_HOSTNAME_POLKIT_SET_HOSTNAME /* reuse */,
+    if( !check_polkit(invocation, RCL_HOSTNAME_POLKIT_SET_HOSTNAME,
                       interactive, &error) )
       goto method_error;
 
@@ -855,15 +869,12 @@ handle_method_call( GDBusConnection       *connection,
     return;
   }
 
-  /* ------------------------------------------------------------------
-     GetHardwareSerial
-     ------------------------------------------------------------------ */
   if( g_strcmp0(method_name, "GetHardwareSerial") == 0 )
   {
     gboolean interactive;
     g_variant_get( parameters, "(b)", &interactive );
 
-    if( !check_polkit(invocation, RCL_HOSTNAME_POLKIT_SET_HOSTNAME /* reuse */,
+    if( !check_polkit(invocation, RCL_HOSTNAME_POLKIT_SET_HOSTNAME,
                       interactive, &error) )
       goto method_error;
 
@@ -874,9 +885,6 @@ handle_method_call( GDBusConnection       *connection,
     return;
   }
 
-  /* ------------------------------------------------------------------
-     Describe – return all properties as a JSON blob
-     ------------------------------------------------------------------ */
   if( g_strcmp0(method_name, "Describe") == 0 )
   {
     gchar *json = g_strdup_printf(
@@ -884,6 +892,8 @@ handle_method_call( GDBusConnection       *connection,
       "\"Hostname\":\"%s\","
       "\"StaticHostname\":\"%s\","
       "\"PrettyHostname\":\"%s\","
+      "\"DefaultHostname\":\"%s\","
+      "\"HostnameSource\":\"%s\","
       "\"IconName\":\"%s\","
       "\"Chassis\":\"%s\","
       "\"Deployment\":\"%s\","
@@ -892,12 +902,18 @@ handle_method_call( GDBusConnection       *connection,
       "\"KernelRelease\":\"%s\","
       "\"KernelVersion\":\"%s\","
       "\"OperatingSystemPrettyName\":\"%s\","
+      "\"OperatingSystemCPEName\":\"%s\","
+      "\"OperatingSystemHomeURL\":\"%s\","
       "\"HardwareVendor\":\"%s\","
-      "\"HardwareModel\":\"%s\""
+      "\"HardwareModel\":\"%s\","
+      "\"FirmwareVersion\":\"%s\","
+      "\"FirmwareDate\":%" G_GUINT64_FORMAT
       "}",
       priv->hostname         ? priv->hostname         : "",
       priv->static_hostname  ? priv->static_hostname  : "",
       priv->pretty_hostname  ? priv->pretty_hostname  : "",
+      priv->default_hostname ? priv->default_hostname : "",
+      priv->hostname_source  ? priv->hostname_source  : "",
       priv->icon_name        ? priv->icon_name        : "",
       priv->chassis          ? priv->chassis          : "",
       priv->deployment       ? priv->deployment       : "",
@@ -906,8 +922,12 @@ handle_method_call( GDBusConnection       *connection,
       priv->kernel_release   ? priv->kernel_release   : "",
       priv->kernel_version   ? priv->kernel_version   : "",
       priv->os_pretty_name   ? priv->os_pretty_name   : "",
+      priv->os_cpe_name      ? priv->os_cpe_name      : "",
+      priv->os_home_url      ? priv->os_home_url      : "",
       priv->hw_vendor        ? priv->hw_vendor        : "",
-      priv->hw_model         ? priv->hw_model         : "" );
+      priv->hw_model         ? priv->hw_model         : "",
+      priv->firmware_version ? priv->firmware_version : "",
+      priv->firmware_date_usec );
 
     g_dbus_method_invocation_return_value( invocation,
       g_variant_new("(s)", json) );
@@ -915,7 +935,6 @@ handle_method_call( GDBusConnection       *connection,
     return;
   }
 
-  /* Unknown method */
   g_dbus_method_invocation_return_error( invocation,
     G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD,
     "Unknown method '%s'", method_name );
@@ -982,7 +1001,6 @@ rcl_daemon_startup( RclDaemon *daemon, GDBusConnection *connection )
     return FALSE;
   }
 
-  /* Populate initial property values */
   rcl_daemon_sync_dbus_properties( self );
 
   g_debug( "hostnamed D-Bus object registered at /org/freedesktop/hostname1" );
@@ -1044,7 +1062,7 @@ rcl_hostname_daemon_finalize( GObject *object )
   g_free( priv->hw_vendor );
   g_free( priv->hw_model );
   g_free( priv->firmware_version );
-  g_free( priv->firmware_date );
+  /* firmware_date_usec is a guint64 scalar, no g_free needed */
 
   G_OBJECT_CLASS(rcl_hostname_daemon_parent_class)->finalize(object);
 }
