@@ -69,6 +69,7 @@ meson setup \
   --datadir=/usr/share \
   --sysconfdir=/etc \
   --localstatedir=/var \
+  --mandir=/usr/man \
   --buildtype=release \
   -Dprivileged-group=wheel \
   -Dhostname_conf=/etc/HOSTNAME \
