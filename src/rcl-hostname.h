@@ -145,6 +145,10 @@ void rcl_daemon_sync_dbus_properties ( RclHostnameDaemon *daemon );
 #define RCL_HOSTNAME_POLKIT_SET_STATIC     "org.freedesktop.hostname1.set-static-hostname"
 #define RCL_HOSTNAME_POLKIT_SET_MACHINE_INFO \
                                            "org.freedesktop.hostname1.set-machine-info"
+#define RCL_HOSTNAME_POLKIT_GET_PRODUCT_UUID \
+                                           "org.freedesktop.hostname1.get-product-uuid"
+#define RCL_HOSTNAME_POLKIT_GET_HARDWARE_SERIAL \
+                                           "org.freedesktop.hostname1.get-hardware-serial"
 
 /*---------------------------------------------------------------------------
   File paths – gathered in one place so they're easy to override for tests
