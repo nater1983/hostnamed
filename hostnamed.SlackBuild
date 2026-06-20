@@ -85,13 +85,6 @@ mkdir -p $PKG/usr/bin
 cat slack/hostnamectl > $PKG/usr/bin/hostnamectl
 chmod 755 $PKG/usr/bin/hostnamectl
 
-# NOTE: slack/localectl targets org.freedesktop.locale1 (blocaled), a
-# different daemon. It does not belong in the hostnamed package and would
-# collide with a future locale package, so it is intentionally NOT shipped
-# here. Uncomment the two lines below only if you really want it bundled:
-# cat slack/localectl > $PKG/usr/bin/localectl
-# chmod 755 $PKG/usr/bin/localectl
-
 find $PKG | xargs file | grep -e "executable" -e "shared object" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null || true
 
 mkdir -p $PKG/usr/doc/$PRGNAM-$VERSION
