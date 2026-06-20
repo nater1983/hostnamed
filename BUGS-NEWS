@@ -4,7 +4,7 @@ NEWS
 This file summarizes user-visible changes to hostnamed, most recent first.
 See CHANGELOG.md for the full commit-level history.
 
-Unreleased (2026-06-20)
+0.2.6 (2026-06-20)
 -----------------------
 * PolKit authorization checks are now asynchronous. The agent password
   dialog no longer blocks the daemon's main loop while waiting for the
