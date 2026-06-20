@@ -72,7 +72,9 @@ conf.set_quoted('SBINDIR',         abs_sbindir)
 # HOSTNAME_FILE: path to the static hostname file
 #   (/etc/HOSTNAME on Slackware, /etc/hostname elsewhere).
 conf.set_quoted('PRIVILEGED_GROUP', get_option('privileged-group'))
-conf.set_quoted('HOSTNAME_FILE',    get_option('HOSTNAME'))
+conf.set_quoted('RCL_HOSTNAME_FILE',    get_option('hostname_conf'))
+conf.set_quoted('RCL_MACHINE_INFO_FILE',    get_option('machine_conf'))
+conf.set_quoted('RCL_OS_RELEASE_FILE',    get_option('os_conf'))
 
 conf.set('GLIB_VERSION_MIN_REQUIRED', 'GLIB_VERSION_2_56')
 conf.set('GLIB_VERSION_MAX_ALLOWED',  'GLIB_VERSION_2_56')
