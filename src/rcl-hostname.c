@@ -493,6 +493,67 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
 }
 
 /* --------------------------------------------------------------------------
+   Direct property cache update
+
+   Forces priv-> for a given machine-info key to the value we just wrote to
+   disk and emits PropertiesChanged for it immediately.  Used by the Set*
+   method handlers right after a successful write, so the in-memory cache
+   is guaranteed correct even if a concurrent inotify-triggered resync (or
+   any other resync) interleaves and re-reads the file in a stale or
+   torn state.
+   -------------------------------------------------------------------------- */
+static void
+rcl_daemon_force_machine_info_property( RclHostnameDaemon *daemon,
+                                        const gchar       *key,
+                                        const gchar       *new_value )
+{
+  RclHostnameDaemonPrivate *priv = daemon->priv;
+  gchar      **field      = NULL;
+  const gchar *dbus_name  = NULL;
+
+  if     ( g_strcmp0(key, "PRETTY_HOSTNAME") == 0 ) { field = &priv->pretty_hostname; dbus_name = "PrettyHostname"; }
+  else if( g_strcmp0(key, "ICON_NAME")       == 0 ) { field = &priv->icon_name;       dbus_name = "IconName"; }
+  else if( g_strcmp0(key, "CHASSIS")         == 0 ) { field = &priv->chassis;         dbus_name = "Chassis"; }
+  else if( g_strcmp0(key, "DEPLOYMENT")      == 0 ) { field = &priv->deployment;      dbus_name = "Deployment"; }
+  else if( g_strcmp0(key, "LOCATION")        == 0 ) { field = &priv->location;        dbus_name = "Location"; }
+
+  if( !field )
+    return;
+
+  g_free( *field );
+  *field = g_strdup( new_value ? new_value : "" );
+
+  if( priv->connection && priv->registration_id > 0 )
+  {
+    GVariantBuilder changed_props;
+    GError *err = NULL;
+
+    g_variant_builder_init( &changed_props, G_VARIANT_TYPE("a{sv}") );
+    g_variant_builder_add( &changed_props, "{sv}", dbus_name,
+                           g_variant_new_string( *field ) );
+
+    g_dbus_connection_emit_signal(
+      priv->connection,
+      NULL,
+      "/org/freedesktop/hostname1",
+      "org.freedesktop.DBus.Properties",
+      "PropertiesChanged",
+      g_variant_new( "(sa{sv}as)",
+                     "org.freedesktop.hostname1",
+                     &changed_props,
+                     NULL ),
+      &err );
+
+    if( err )
+    {
+      g_warning( "PropertiesChanged emission failed for %s: %s",
+                dbus_name, err->message );
+      g_error_free( err );
+    }
+  }
+}
+
+/* --------------------------------------------------------------------------
    machine-info writer
 
    All Set* methods that touch /etc/machine-info funnel through here.
@@ -912,8 +973,15 @@ handle_method_call( GDBusConnection       *connection,
         goto method_error;
       }
 
-      g_free( sanitised );
+      /* Run the generic resync first (other properties may also need
+         refreshing), then force this specific field to exactly what we
+         just wrote.  Ordering matters: forcing it AFTER the resync means
+         a concurrent inotify-triggered resync reading a stale/interleaved
+         file cannot clobber the value we know is authoritative. */
       rcl_daemon_sync_dbus_properties( daemon );
+      rcl_daemon_force_machine_info_property( daemon, key, name );
+
+      g_free( sanitised );
       g_dbus_method_invocation_return_value( invocation, NULL );
       return;
     }
