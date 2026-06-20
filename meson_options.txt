@@ -37,7 +37,7 @@ option(
 )
 
 option(
-  'os__conf',
+  'os_conf',
   type        : 'string',
   value       : '/etc/os-release',
   description : 'Path to the os-release file',
