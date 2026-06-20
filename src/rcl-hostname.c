@@ -592,6 +592,34 @@ rcl_hostname_is_valid( const gchar *name )
   return TRUE;
 }
 
+/* --------------------------------------------------------------------------
+   Pretty-hostname sanitiser
+
+   Some desktop shells (observed: GNOME Control Center's "Device Name"
+   field) call SetPrettyHostname with the *same* dotted/FQDN-style string
+   they also pass to SetStaticHostname, rather than a short human label.
+   If the incoming pretty name contains a dot and matches that pattern,
+   keep only the first label (e.g. "dair.example.net" -> "dair").  A
+   pretty name the caller deliberately set with spaces/punctuation but no
+   dot is left untouched.
+   -------------------------------------------------------------------------- */
+static gchar *
+rcl_derive_pretty_hostname( const gchar *name )
+{
+  const gchar *dot;
+
+  if( !name || name[0] == '\0' )
+    return g_strdup( "" );
+
+  dot = strchr( name, '.' );
+  if( !dot )
+    return g_strdup( name );
+
+  /* Looks like an FQDN/static hostname rather than a human label –
+     keep only the leading segment. */
+  return g_strndup( name, (gsize)(dot - name) );
+}
+
 static gboolean
 rcl_machine_info_value_is_safe( const gchar *value )
 {
@@ -852,23 +880,39 @@ handle_method_call( GDBusConnection       *connection,
 
     if( key )
     {
+      gchar *sanitised = NULL;
+
       g_variant_get( parameters, "(&sb)", &name, &interactive );
 
       if( !check_polkit(invocation, RCL_HOSTNAME_POLKIT_SET_MACHINE_INFO,
                         interactive, &error) )
         goto method_error;
 
+      /* GNOME's "Device Name" field sometimes sends the FQDN it also gave
+         SetStaticHostname; reduce it to the first label for PrettyHostname
+         specifically so the two don't end up identical/dotted. */
+      if( g_strcmp0( key, "PRETTY_HOSTNAME" ) == 0 )
+      {
+        sanitised = rcl_derive_pretty_hostname( name );
+        name = sanitised;
+      }
+
       if( !rcl_machine_info_value_is_safe(name) )
       {
         g_set_error( &error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
                      "Invalid value for %s: control characters and quotes are not allowed",
                      key );
+        g_free( sanitised );
         goto method_error;
       }
 
       if( !write_machine_info_key(key, name, &error) )
+      {
+        g_free( sanitised );
         goto method_error;
+      }
 
+      g_free( sanitised );
       rcl_daemon_sync_dbus_properties( daemon );
       g_dbus_method_invocation_return_value( invocation, NULL );
       return;
