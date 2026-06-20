@@ -2,7 +2,7 @@
 
 All notable changes to `hostnamed` are documented in this file, derived from the project's git history.
 
-## [Unreleased] - 2026-06-20
+## [0.2.6] - 2026-06-20
 
 ### Security
 - Fixed a polkit authorization bypass and a JSON escaping bug in the D-Bus interface (PR #1, rizitis/main) (`9acb293`, `96438ab`)
