@@ -89,6 +89,7 @@ config_h_inc = include_directories('.')
 subdir('src')
 subdir('data')
 subdir('po')
+subdir('man')
 
 summary({
   'prefix'     : prefix,
