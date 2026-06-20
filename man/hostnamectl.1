@@ -1,0 +1,225 @@
+.\" Manpage for hostnamectl (hostnamed bash client)
+.TH HOSTNAMECTL 1 "June 2026" "hostnamed" "User Commands"
+.SH NAME
+hostnamectl \- control the system hostname and related machine metadata
+.SH SYNOPSIS
+.B hostnamectl
+.RI [ OPTIONS ]
+.IR COMMAND " [" ARGUMENT ]
+.SH DESCRIPTION
+.B hostnamectl
+is a Bash client used to query and change the system's static, transient,
+and pretty hostnames, along with related machine metadata such as the
+icon name, chassis type, deployment environment, and location.
+.PP
+Unlike a typical D-Bus client,
+.B hostnamectl
+writes directly to
+.I /etc/HOSTNAME
+(or
+.I /etc/hostname
+if the former does not exist) and
+.IR /etc/machine-info .
+The
+.B hostnamed
+daemon watches these files with
+.BR inotify (7)
+and automatically updates its
+.B org.freedesktop.hostname1
+D-Bus properties and emits
+.B PropertiesChanged
+signals whenever they are modified, whether by
+.B hostnamectl
+or by any other tool. This means
+.B hostnamectl
+itself never talks to D-Bus or PolKit; it relies on ordinary file
+permissions, and most subcommands simply require root.
+.PP
+On first run as root, if
+.I /etc/machine-info
+does not yet exist,
+.B hostnamectl
+creates it automatically, deriving an initial chassis and icon name from
+SMBIOS data under
+.I /sys/class/dmi/id
+and an initial pretty hostname from the static hostname file. An existing
+.I /etc/machine-info
+is never overwritten by this bootstrap step.
+.SH COMMANDS
+.TP
+.B status
+Show the current hostname and machine information in human-readable form.
+This is the default command when none is given. Fields are only printed
+when a value is available; for example the pretty hostname, deployment,
+location, firmware fields, and virtualization line are omitted entirely
+if empty or undetectable. The transient hostname is only shown when it
+differs from the static hostname.
+.TP
+.BI set-hostname " [--static|--transient|--pretty] NAME"
+Set the system hostname. With no mode flag, all three forms are updated
+at once: the static hostname file and the transient hostname (via the
+.BR hostname (1)
+command) are both set to
+.IR NAME ,
+and the pretty hostname is set to
+.I NAME
+with any domain suffix stripped (the portion before the first dot).
+.RS
+.TP
+.B --static
+Update only the static hostname file.
+.TP
+.B --transient
+Update only the running kernel's hostname via
+.BR hostname (1),
+without touching any file.
+.TP
+.B --pretty
+Update only the pretty hostname in
+.IR /etc/machine-info .
+Unlike the other modes, the value is not validated as a DNS-style
+hostname, since pretty names are free-form and may contain spaces.
+.RE
+.TP
+.BI set-icon-name " NAME"
+Set the freedesktop icon name (for example
+.BR computer-laptop )
+used to represent this machine in graphical tools. Stored as
+.B ICON_NAME
+in
+.IR /etc/machine-info .
+.TP
+.BI set-chassis " TYPE"
+Set the chassis type. Must be one of:
+.BR desktop ", " laptop ", " server ", " tablet ", " handset ", "
+.BR watch ", " embedded ", " vm ", " container ", or " convertible .
+Stored as
+.B CHASSIS
+in
+.IR /etc/machine-info .
+.TP
+.BI set-deployment " ENVIRONMENT"
+Set a free-form deployment label, for example
+.BR production " or " staging .
+Stored as
+.B DEPLOYMENT
+in
+.IR /etc/machine-info .
+.TP
+.BI set-location " LOCATION"
+Set a free-form physical location string. Stored as
+.B LOCATION
+in
+.IR /etc/machine-info .
+.SH OPTIONS
+.TP
+.BR -h ", " --help
+Show a short usage summary and exit.
+.SH EXAMPLES
+.PP
+Show the current status:
+.PP
+.RS
+.EX
+hostnamectl status
+.EE
+.RE
+.PP
+Rename the machine entirely (static, transient, and pretty hostnames):
+.PP
+.RS
+.EX
+hostnamectl set-hostname web01.example.net
+.EE
+.RE
+.PP
+Give the machine a friendly display name without changing its network
+hostname:
+.PP
+.RS
+.EX
+hostnamectl set-hostname --pretty "Nathan's Desktop"
+.EE
+.RE
+.PP
+Change only the running kernel's hostname, leaving the configured static
+hostname untouched until the next reboot:
+.PP
+.RS
+.EX
+hostnamectl set-hostname --transient temphost
+.EE
+.RE
+.PP
+Mark a machine as part of staging:
+.PP
+.RS
+.EX
+hostnamectl set-deployment staging
+.EE
+.RE
+.SH EXIT STATUS
+Returns 0 on success and 1 on error (for example, an invalid hostname,
+an invalid chassis type, a missing argument, or insufficient
+permissions).
+.SH AUTHORIZATION
+All subcommands other than
+.B status
+require root. There is no PolKit prompt or D-Bus round trip in
+.B hostnamectl
+itself; the daemon's PolKit policy governs only direct D-Bus callers
+such as
+.BR gnome-control-center (1).
+.SH FILES
+.TP
+.I /etc/HOSTNAME
+Static hostname file, used in preference to
+.I /etc/hostname
+when present.
+.TP
+.I /etc/hostname
+Fallback static hostname file, used only if
+.I /etc/HOSTNAME
+does not exist.
+.TP
+.I /etc/machine-info
+Stores the pretty hostname, icon name, chassis, deployment, and location
+as shell-style
+.B KEY="value"
+assignments. Rewritten atomically (temporary file plus rename) on every
+write. Created automatically on first root invocation if missing.
+.TP
+.I /etc/os-release
+Read for the operating system's pretty name and CPE name when displaying
+.BR status .
+Not modified by
+.BR hostnamectl .
+.TP
+.I /etc/machine-id
+Read for the machine ID shown in
+.BR status .
+Not modified by
+.BR hostnamectl .
+.TP
+.I /sys/class/dmi/id/*
+SMBIOS/DMI sysfs nodes read for chassis detection, virtualization
+detection, and the hardware vendor, model, firmware version, and
+firmware date fields shown in
+.BR status .
+.SH SEE ALSO
+.BR hostnamed (8),
+.BR machine-info (5),
+.BR os-release (5),
+.BR hostname (1),
+.BR inotify (7)
+.SH AUTHOR
+Written by Nathaniel Russell.
+.PP
+Part of the
+.B hostnamed
+project, a non-systemd implementation of the
+.B org.freedesktop.hostname1
+D-Bus interface for Slackware Linux.
+.SH LICENSE
+This program is free software, distributed under the GNU General Public
+License, version 2 or later. See the source for copying conditions.
