@@ -1,0 +1,403 @@
+.\" Manpage for hostnamed
+.TH HOSTNAMED 8 "June 2026" "hostnamed" "System Administration"
+.SH NAME
+hostnamed \- D-Bus hostname management daemon for non-systemd Linux systems
+.SH SYNOPSIS
+.B /usr/libexec/hostnamed
+.RB [ \-\-debug ]
+.SH DESCRIPTION
+.B hostnamed
+is a standalone system daemon that implements the
+.B org.freedesktop.hostname1
+D-Bus interface using direct D-Bus activation, with no dependency on
+.IR systemd .
+It exposes the same hostname and machine-identity properties as
+.BR systemd-hostnamed (8)
+on systemd-based distributions, allowing desktop tools such as
+.B gnome-control-center
+to read and edit the system's hostname and related machine metadata on
+systems that use
+.B elogind
+and a D-Bus/PolKit stack without systemd.
+.PP
+.B hostnamed
+does not poll or hold any files open for writing on its own initiative.
+Instead it watches its source files with
+.BR inotify (7)
+and re-reads them whenever they change, regardless of who changed them
+\(em the bundled
+.BR hostnamectl (1)
+client, a hand edit, or any other tool. After a resync it emits
+.B PropertiesChanged
+on the D-Bus object for every property whose value actually changed.
+.PP
+.B hostnamed
+is normally started on demand by D-Bus activation when a client first
+calls a method or reads a property on the
+.B org.freedesktop.hostname1
+bus name. It can also be started manually for debugging.
+.SH OPTIONS
+.TP
+.B \-\-debug
+Enable verbose debug logging to standard error in addition to syslog.
+.SH "D-BUS INTERFACE"
+.B hostnamed
+registers the object
+.B /org/freedesktop/hostname1
+on the system bus, implementing the
+.B org.freedesktop.hostname1
+interface.
+.SS Properties
+All properties are read-only over D-Bus; values are changed via the
+.B Set*
+methods described below, or by editing the underlying files directly
+(see
+.BR FILES ),
+which
+.B hostnamed
+picks up automatically.
+.TP
+.B Hostname \fR(s)
+The transient hostname, as returned by
+.BR gethostname (2).
+.TP
+.B StaticHostname \fR(s)
+The hostname persisted to the static hostname file (see
+.BR FILES ).
+.TP
+.B PrettyHostname \fR(s)
+A human-readable, free-form display name for the machine, stored as
+.B PRETTY_HOSTNAME
+in
+.IR /etc/machine-info .
+Unlike
+.BR StaticHostname ,
+this value is not used for name resolution and may contain spaces and
+mixed case. When
+.B SetPrettyHostname
+is called with a value that contains a dot \(em as happens when a
+desktop shell populates both the static and pretty hostname from the
+same text field \(em
+.B hostnamed
+keeps only the portion before the first dot, so the pretty name does
+not end up as a dotted hostname.
+.TP
+.B DefaultHostname \fR(s)
+The compiled-in or distribution default hostname, used when no static or
+transient hostname is configured.
+.TP
+.B HostnameSource \fR(s)
+One of
+.RB ` static ',
+.RB ` transient ',
+or
+.RB ` default ',
+indicating which mechanism currently determines
+.BR Hostname .
+.TP
+.B IconName \fR(s)
+A freedesktop icon name (e.g.
+.RB ` computer-desktop ',
+.RB ` computer-laptop ')
+describing the machine's form factor, taken from
+.I /etc/machine-info
+or derived from the SMBIOS chassis type when unset.
+.TP
+.B Chassis \fR(s)
+A short chassis class string such as
+.RB ` desktop ',
+.RB ` laptop ',
+.RB ` server ',
+.RB ` tablet ',
+or
+.RB ` handset ',
+taken from
+.I /etc/machine-info
+or derived from SMBIOS chassis-type data under
+.IR /sys/class/dmi/id .
+.TP
+.B Deployment \fR(s)
+A free-form deployment label (e.g.
+.RB ` production ',
+.RB ` staging '),
+stored in
+.IR /etc/machine-info .
+.TP
+.B Location \fR(s)
+A free-form physical location string, stored in
+.IR /etc/machine-info .
+.TP
+.B KernelName \fR(s)
+The kernel name as reported by
+.BR uname (2)
+(typically
+.RB ` Linux ').
+.TP
+.B KernelRelease \fR(s)
+The kernel release string from
+.BR uname (2).
+.TP
+.B KernelVersion \fR(s)
+The kernel version string from
+.BR uname (2).
+.TP
+.B OperatingSystemPrettyName \fR(s)
+The
+.B PRETTY_NAME
+field from
+.IR /etc/os-release .
+.TP
+.B OperatingSystemCPEName \fR(s)
+The
+.B CPE_NAME
+field from
+.IR /etc/os-release ,
+if present.
+.TP
+.B OperatingSystemHomeURL \fR(s)
+The
+.B HOME_URL
+field from
+.IR /etc/os-release ,
+if present.
+.TP
+.B HardwareVendor \fR(s)
+The system board vendor, read from
+.IR /sys/class/dmi/id/board_vendor .
+.TP
+.B HardwareModel \fR(s)
+The system product name, read from
+.IR /sys/class/dmi/id/product_name .
+.TP
+.B FirmwareVersion \fR(s)
+The BIOS/firmware version string, read from
+.IR /sys/class/dmi/id/bios_version .
+.TP
+.B FirmwareDate \fR(t)
+The BIOS/firmware release date, expressed as a
+.B uint64
+count of microseconds since the UNIX epoch (UTC), per the
+.B org.freedesktop.hostname1
+interface specification. The value is parsed from the
+.RB ` MM/DD/YYYY '
+date string in
+.IR /sys/class/dmi/id/bios_date .
+If the source date is absent or cannot be parsed, this property is set
+to
+.BR UINT64_MAX .
+.SS Methods
+.TP
+.B SetHostname(s name, b interactive)
+Sets the transient hostname via
+.BR sethostname (2).
+Requires the
+.B org.freedesktop.hostname1.set-hostname
+PolKit action.
+.TP
+.B SetStaticHostname(s name, b interactive)
+Writes
+.I name
+to the static hostname file (see
+.BR FILES )
+and updates the transient hostname to match. Passing an empty string
+removes the static hostname file. Requires the
+.B org.freedesktop.hostname1.set-static-hostname
+PolKit action.
+.TP
+.B SetPrettyHostname(s name, b interactive)
+Writes
+.I name
+as
+.B PRETTY_HOSTNAME
+in
+.IR /etc/machine-info ,
+after stripping any trailing dotted domain suffix (see
+.B PrettyHostname
+above). Requires the
+.B org.freedesktop.hostname1.set-machine-info
+PolKit action.
+.TP
+.B SetIconName(s name, b interactive)
+Writes
+.I name
+as
+.B ICON_NAME
+in
+.IR /etc/machine-info .
+Requires
+.BR org.freedesktop.hostname1.set-machine-info .
+.TP
+.B SetChassis(s name, b interactive)
+Writes
+.I name
+as
+.B CHASSIS
+in
+.IR /etc/machine-info .
+Requires
+.BR org.freedesktop.hostname1.set-machine-info .
+.TP
+.B SetDeployment(s name, b interactive)
+Writes
+.I name
+as
+.B DEPLOYMENT
+in
+.IR /etc/machine-info .
+Requires
+.BR org.freedesktop.hostname1.set-machine-info .
+.TP
+.B SetLocation(s name, b interactive)
+Writes
+.I name
+as
+.B LOCATION
+in
+.IR /etc/machine-info .
+Requires
+.BR org.freedesktop.hostname1.set-machine-info .
+.TP
+.B GetProductUUID(b interactive) \(-> ay
+Returns the DMI product UUID, read from
+.IR /sys/class/dmi/id/product_uuid ,
+as a byte array.
+.TP
+.B GetHardwareSerial(b interactive) \(-> s
+Returns the DMI chassis serial number, read from
+.IR /sys/class/dmi/id/chassis_serial .
+.TP
+.B Describe() \(-> s
+Returns a single JSON object containing the current value of every
+property listed above, for clients that prefer one bulk read over
+individual property gets. Not used by the bundled
+.BR hostnamectl (1)
+client, which reads the underlying files directly instead.
+.PP
+For every method that takes an
+.I interactive
+argument, a value of
+.B true
+indicates the caller is willing to wait for a PolKit authentication
+dialog to be presented by the user's session PolKit agent; a value of
+.B false
+indicates the call should fail immediately with
+.B org.freedesktop.DBus.Error.AuthFailed
+unless the caller is already authorized.
+.SH AUTHORIZATION
+Access to the
+.B Set*
+and
+.B Get*
+(UUID/serial) methods over D-Bus is controlled by
+.BR polkit (8)
+using the following actions, declared in
+.IR /usr/share/polkit-1/actions/org.freedesktop.hostname1.policy :
+.TP
+.B org.freedesktop.hostname1.set-hostname
+.TQ
+.B org.freedesktop.hostname1.set-static-hostname
+.TQ
+.B org.freedesktop.hostname1.set-machine-info
+.PP
+By default these actions require
+.B auth_admin
+for inactive or remote callers and
+.B auth_admin_keep
+for an active local session, matching upstream
+.BR systemd-hostnamed (8)
+policy. A PolKit rule installed at
+.I /usr/share/polkit-1/rules.d/org.freedesktop.hostname1.rules
+additionally grants unconditional access to members of the privileged
+group selected at build time (default
+.RB ` wheel ',
+see the
+.B privileged-group
+meson option), so desktop session tools are not prompted for a password
+on every edit. Group membership changes only take effect for new login
+sessions; a user added to the privileged group must log out and back in
+before
+.B hostnamed
+will recognize the new membership.
+.PP
+These PolKit actions govern D-Bus callers only. The bundled
+.BR hostnamectl (1)
+client bypasses D-Bus entirely and writes the underlying files
+directly, so its own authorization is the ordinary Unix file
+permissions on those files (in practice, it requires root for every
+subcommand except
+.BR status ).
+.SH FILES
+.TP
+.I /etc/HOSTNAME
+Default path for the static hostname file (Slackware convention; the
+build-time
+.B HOSTNAME
+meson option, exposed in code as
+.BR HOSTNAME_FILE ,
+may point this elsewhere, e.g.
+.I /etc/hostname
+on other distributions). Watched with
+.BR inotify (7).
+.TP
+.I /etc/machine-info
+Stores
+.BR PRETTY_HOSTNAME ", " ICON_NAME ", " CHASSIS ", " DEPLOYMENT ", "
+and
+.B LOCATION
+as shell-style
+.B KEY="value"
+assignments. Rewritten atomically (temporary file plus rename) on every
+write, by either
+.B hostnamed
+itself or
+.BR hostnamectl (1).
+Watched with
+.BR inotify (7).
+.TP
+.I /etc/os-release
+Read for
+.BR PRETTY_NAME ", " CPE_NAME ", "
+and
+.BR HOME_URL .
+Not written by
+.BR hostnamed .
+.TP
+.I /sys/class/dmi/id/chassis_type
+.TQ
+.I /sys/class/dmi/id/chassis_serial
+.TQ
+.I /sys/class/dmi/id/board_vendor
+.TQ
+.I /sys/class/dmi/id/product_name
+.TQ
+.I /sys/class/dmi/id/product_uuid
+.TQ
+.I /sys/class/dmi/id/bios_version
+.TQ
+.I /sys/class/dmi/id/bios_date
+SMBIOS/DMI sysfs nodes read for hardware and firmware identification.
+Any node that does not exist or cannot be read is treated as empty.
+.TP
+.I /usr/share/polkit-1/actions/org.freedesktop.hostname1.policy
+PolKit action declarations and default authorization requirements.
+.TP
+.I /usr/share/polkit-1/rules.d/org.freedesktop.hostname1.rules
+PolKit rule granting the configured privileged group unconditional
+access to all three hostname1 actions.
+.SH "SEE ALSO"
+.BR hostnamectl (1),
+.BR machine-info (5),
+.BR os-release (5),
+.BR polkit (8),
+.BR pkcheck (1),
+.BR sethostname (2),
+.BR inotify (7)
+.SH AUTHOR
+Nathaniel Russell <naterussell83@gmail.com>
+.SH LICENSE
+This program is free software, distributed under the GNU General Public
+License, version 2 or later. See the source for copying conditions.
+.SH BUGS
+Report bugs at
+.UR https://github.com/nater1983/hostnamed
+.UE .
