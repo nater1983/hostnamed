@@ -1,0 +1,93 @@
+NEWS
+====
+
+This file summarizes user-visible changes to hostnamed, most recent first.
+See CHANGELOG.md for the full commit-level history.
+
+Unreleased (2026-06-20)
+-----------------------
+* PolKit authorization checks are now asynchronous. The agent password
+  dialog no longer blocks the daemon's main loop while waiting for the
+  user to authenticate.
+* GetProductUUID and GetHardwareSerial now require their own dedicated
+  PolKit actions (org.freedesktop.hostname1.get-product-uuid and
+  .get-hardware-serial) instead of piggybacking on set-hostname.
+  Existing polkit.d overrides that grant set-hostname will need an
+  equivalent rule added for these two actions if you rely on
+  non-default authorization.
+* Fixed a PolKit authorization bypass and a JSON-escaping bug in the
+  D-Bus interface (contributed via PR #1).
+* Machine-info writes are now validated a second time inside the
+  writer itself, independent of the caller, as defence in depth.
+
+0.2.0 (2026-06-19)
+------------------
+* Version bumped 0.1.0 -> 0.2.0.
+* Added configuration options for os-release and machine-info file
+  paths, so non-standard layouts no longer require patching the
+  source.
+* PrettyHostname is now derived/sanitized from a submitted FQDN
+  rather than stored verbatim, fixing duplicate-looking
+  Hostname/PrettyHostname values in desktop environments that send
+  the full domain name (e.g. GNOME Control Center).
+* FirmwareDate is now exposed as a D-Bus uint64 (microseconds since
+  the Unix epoch) instead of its previous type, matching upstream
+  hostname1 semantics.
+* Property cache updates for machine-info keys are applied directly
+  and emit PropertiesChanged immediately, instead of waiting on the
+  next inotify-triggered resync.
+
+0.1.0 (2026-05-31 - 2026-06-17)
+--------------------------------
+* First public implementation of org.freedesktop.hostname1 over
+  plain D-Bus, with no systemd/logind dependency. Intended for
+  Slackware and other non-systemd Linux systems.
+* SetHostname, SetStaticHostname, SetPrettyHostname, SetIconName,
+  SetChassis, SetDeployment, SetLocation, GetProductUUID, and
+  GetHardwareSerial implemented, each gated by PolKit.
+* Input validation added for hostnames and machine-info values
+  (rejects control characters, quotes, and otherwise malformed
+  input).
+* hostnamectl and localectl companion shell scripts added, writing
+  files directly and relying on inotify for the daemon to pick up
+  changes.
+* SlackBuild packaging script added for building a Slackware
+  package from source.
+
+
+BUGS
+====
+
+Known issues and limitations as of the Unreleased version above.
+Please report new issues at https://github.com/nater1983/hostnamed/issues
+
+* GetProductUUID and GetHardwareSerial default to the auth_admin
+  PolKit policy. This is stricter than systemd-hostnamed's
+  upstream default (which allows these reads without
+  authentication) and may surprise users porting polkit rules from
+  a systemd-based system. Override via /etc/polkit-1/rules.d/ if
+  unattended/non-interactive reads are required.
+* The PolKit authority handle is fetched once at daemon startup; if
+  polkitd is not yet running at that point, every call falls back to
+  a lazy synchronous re-fetch on first use, which can introduce a
+  one-time stall on the first authorized method call after boot.
+* write_machine_info_key() rewrites /etc/machine-info by
+  read-modify-write with no advisory locking against a second
+  writer (e.g. a hand-edited file or another tool) touching the file
+  at the same instant; the inotify-triggered resync can race a
+  concurrent external write.
+* PrettyHostname derivation from an FQDN (rcl_derive_pretty_hostname)
+  has only been exercised against typical desktop-supplied values;
+  unusual input (IDN/punycode labels, multiple consecutive dots) is
+  not specifically covered by tests.
+* No automated test suite or CI currently exists for this project;
+  changes are validated manually against GNOME Control Center's
+  System panel.
+* hostnamectl/localectl write configuration files directly and rely
+  on inotify for the daemon to notice the change; very rapid
+  successive writes can in principle be coalesced or missed
+  depending on inotify queue behavior under load.
+* wheel-group membership changes are not picked up until the
+  subject's next login/session start, consistent with how PolKit
+  group subjects are evaluated; this is expected behavior but has
+  surprised testers expecting it to apply live.
