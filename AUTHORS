@@ -1,0 +1,29 @@
+AUTHORS
+=======
+
+hostnamed - org.freedesktop.hostname1 over plain D-Bus, no systemd
+required. Maintained for Slackware and other non-systemd Linux
+systems.
+
+Maintainer
+----------
+Nathaniel Russell <naterussell83@gmail.com>
+    Project creator and maintainer. Initial implementation of the
+    daemon, D-Bus interface, PolKit policy, meson build, and
+    SlackBuild packaging. GitHub: @nater1983
+
+Contributors
+------------
+Anagnostakis Ioannis <elahistos@yahoo.gr>
+    PR #1 (rizitis/main): fixed a PolKit authorization bypass and a
+    JSON-escaping bug in the D-Bus interface; converted PolKit
+    authorization to an asynchronous flow; added dedicated PolKit
+    actions for GetProductUUID/GetHardwareSerial; added
+    defence-in-depth validation in the machine-info writer.
+
+----
+
+If you've contributed to hostnamed and don't see your name here,
+please open a pull request adding yourself, or file an issue at
+https://github.com/nater1983/hostnamed/issues so this file can be
+corrected.

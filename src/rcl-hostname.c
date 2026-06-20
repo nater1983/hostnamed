@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023 Andrey V.Kosteltsev <kx@radix.pro>
+ * Copyright (C) 2026 Nathaniel Russell <naterussell83@gmail.com>
  *
  * Licensed under the GNU General Public License Version 2
  *
@@ -20,9 +20,12 @@
 
 #include "config.h"
 
+#define _GNU_SOURCE   /* for timegm(3) */
 #include <errno.h>
+#include <limits.h>
 #include <string.h>
 #include <sys/utsname.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <gio/gio.h>
@@ -63,7 +66,7 @@ static const gchar hostname1_introspection_xml[] =
   "    <property name='HardwareVendor'              type='s' access='read'/>"
   "    <property name='HardwareModel'               type='s' access='read'/>"
   "    <property name='FirmwareVersion'             type='s' access='read'/>"
-  "    <property name='FirmwareDate'                type='s' access='read'/>"
+  "    <property name='FirmwareDate'                type='t' access='read'/>"
   /* ---- methods ---- */
   "    <method name='SetHostname'>"
   "      <arg name='name'        type='s' direction='in'/>"
@@ -117,6 +120,11 @@ struct _RclHostnameDaemonPrivate
   guint             registration_id;
   gboolean          debug;
 
+  /* Cached PolKit authority handle, fetched once at startup.  The blocking
+     part of authorisation (the agent dialog) is driven asynchronously so it
+     never stalls the single-threaded main loop. */
+  PolkitAuthority  *authority;
+
   /* Cached property values.  Refreshed by rcl_daemon_sync_dbus_properties(). */
   gchar *hostname;
   gchar *static_hostname;
@@ -135,8 +143,8 @@ struct _RclHostnameDaemonPrivate
   gchar *os_home_url;
   gchar *hw_vendor;
   gchar *hw_model;
-  gchar *firmware_version;
-  gchar *firmware_date;
+  gchar   *firmware_version;
+  guint64  firmware_date_usec;   /* µs since Unix epoch; G_MAXUINT64 = unknown */
 };
 
 /* --------------------------------------------------------------------------
@@ -278,6 +286,38 @@ read_dmi( const gchar *path )
 }
 
 /* --------------------------------------------------------------------------
+   FirmwareDate parser
+
+   /sys/class/dmi/id/bios_date contains MM/DD/YYYY.  The D-Bus property is
+   spec'd as type 't' (uint64 µs since the Unix epoch, UTC).  Return
+   G_MAXUINT64 when the date is absent or unparseable.
+   -------------------------------------------------------------------------- */
+static guint64
+parse_firmware_date_usec (const gchar *date_str)
+{
+  int month = 0, day = 0, year = 0;
+  struct tm tm;
+  time_t t;
+
+  if (!date_str || date_str[0] == '\0')
+    return G_MAXUINT64;
+
+  if (sscanf (date_str, "%d/%d/%d", &month, &day, &year) != 3)
+    return G_MAXUINT64;
+
+  memset (&tm, 0, sizeof (tm));
+  tm.tm_year = year - 1900;
+  tm.tm_mon  = month - 1;
+  tm.tm_mday = day;
+
+  t = timegm (&tm);          /* GNU extension; interprets tm as UTC */
+  if (t == (time_t) -1)
+    return G_MAXUINT64;
+
+  return (guint64) t * G_USEC_PER_SEC;
+}
+
+/* --------------------------------------------------------------------------
    Property refresh
    -------------------------------------------------------------------------- */
 
@@ -411,7 +451,21 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
   UPDATE_STR_PROP( hw_vendor,        read_dmi(RCL_DMI_BOARD_VENDOR),  "HardwareVendor" );
   UPDATE_STR_PROP( hw_model,         read_dmi(RCL_DMI_PRODUCT_NAME),  "HardwareModel" );
   UPDATE_STR_PROP( firmware_version, read_dmi(RCL_DMI_BIOS_VERSION),  "FirmwareVersion" );
-  UPDATE_STR_PROP( firmware_date,    read_dmi(RCL_DMI_BIOS_DATE),     "FirmwareDate" );
+
+  /* FirmwareDate is type 't' (uint64 µs since epoch) per the spec */
+  {
+    gchar   *date_str = read_dmi (RCL_DMI_BIOS_DATE);
+    guint64  new_usec = parse_firmware_date_usec (date_str);
+    g_free (date_str);
+
+    if (priv->firmware_date_usec != new_usec)
+      {
+        priv->firmware_date_usec = new_usec;
+        g_variant_builder_add (&changed_props, "{sv}", "FirmwareDate",
+                               g_variant_new_uint64 (new_usec));
+        any_changed = TRUE;
+      }
+  }
 
 #undef UPDATE_STR_PROP
 
@@ -444,11 +498,78 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
 }
 
 /* --------------------------------------------------------------------------
+   Direct property cache update
+
+   Forces priv-> for a given machine-info key to the value we just wrote to
+   disk and emits PropertiesChanged for it immediately.  Used by the Set*
+   method handlers right after a successful write, so the in-memory cache
+   is guaranteed correct even if a concurrent inotify-triggered resync (or
+   any other resync) interleaves and re-reads the file in a stale or
+   torn state.
+   -------------------------------------------------------------------------- */
+static void
+rcl_daemon_force_machine_info_property( RclHostnameDaemon *daemon,
+                                        const gchar       *key,
+                                        const gchar       *new_value )
+{
+  RclHostnameDaemonPrivate *priv = daemon->priv;
+  gchar      **field      = NULL;
+  const gchar *dbus_name  = NULL;
+
+  if     ( g_strcmp0(key, "PRETTY_HOSTNAME") == 0 ) { field = &priv->pretty_hostname; dbus_name = "PrettyHostname"; }
+  else if( g_strcmp0(key, "ICON_NAME")       == 0 ) { field = &priv->icon_name;       dbus_name = "IconName"; }
+  else if( g_strcmp0(key, "CHASSIS")         == 0 ) { field = &priv->chassis;         dbus_name = "Chassis"; }
+  else if( g_strcmp0(key, "DEPLOYMENT")      == 0 ) { field = &priv->deployment;      dbus_name = "Deployment"; }
+  else if( g_strcmp0(key, "LOCATION")        == 0 ) { field = &priv->location;        dbus_name = "Location"; }
+
+  if( !field )
+    return;
+
+  g_free( *field );
+  *field = g_strdup( new_value ? new_value : "" );
+
+  if( priv->connection && priv->registration_id > 0 )
+  {
+    GVariantBuilder changed_props;
+    GError *err = NULL;
+
+    g_variant_builder_init( &changed_props, G_VARIANT_TYPE("a{sv}") );
+    g_variant_builder_add( &changed_props, "{sv}", dbus_name,
+                           g_variant_new_string( *field ) );
+
+    g_dbus_connection_emit_signal(
+      priv->connection,
+      NULL,
+      "/org/freedesktop/hostname1",
+      "org.freedesktop.DBus.Properties",
+      "PropertiesChanged",
+      g_variant_new( "(sa{sv}as)",
+                     "org.freedesktop.hostname1",
+                     &changed_props,
+                     NULL ),
+      &err );
+
+    if( err )
+    {
+      g_warning( "PropertiesChanged emission failed for %s: %s",
+                dbus_name, err->message );
+      g_error_free( err );
+    }
+  }
+}
+
+/* --------------------------------------------------------------------------
    machine-info writer
 
    All Set* methods that touch /etc/machine-info funnel through here.
    The file is rewritten atomically (write to temp, rename).
    -------------------------------------------------------------------------- */
+
+/* Forward declaration: the value validator is defined further down, but the
+   writer below calls it as a defence-in-depth measure so a future second
+   caller cannot reintroduce machine-info injection by forgetting to validate. */
+static gboolean rcl_machine_info_value_is_safe( const gchar *value );
+
 static gboolean
 write_machine_info_key( const gchar  *key,
                         const gchar  *value,
@@ -461,6 +582,16 @@ write_machine_info_key( const gchar  *key,
   gboolean found = FALSE;
   gchar   *tmp_path;
   gboolean ok;
+
+  /* Defence in depth: never write a value we have not vetted ourselves, even
+     though every current caller already validates before calling us.  An
+     empty/NULL value means "remove the key" and is allowed. */
+  if( value && value[0] != '\0' && !rcl_machine_info_value_is_safe( value ) )
+  {
+    g_set_error( error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
+                 "Refusing to write unsafe value for %s", key );
+    return FALSE;
+  }
 
   /* Load existing file, tolerating absence */
   g_file_get_contents( RCL_MACHINE_INFO_FILE, &contents, NULL, NULL );
@@ -516,57 +647,386 @@ write_machine_info_key( const gchar  *key,
 }
 
 /* --------------------------------------------------------------------------
-   Polkit authorisation helper
+   Input validation
    -------------------------------------------------------------------------- */
+
 static gboolean
-check_polkit( GDBusMethodInvocation *invocation,
-              const gchar           *action_id,
-              gboolean               interactive,
-              GError               **error )
+rcl_hostname_is_valid( const gchar *name )
 {
-  PolkitAuthority *authority = NULL;
-  PolkitSubject   *subject   = NULL;
-  PolkitAuthorizationResult *result = NULL;
-  PolkitCheckAuthorizationFlags flags;
-  gboolean authorised = FALSE;
-  const gchar *sender;
-  GError *local_error = NULL;
+  gsize len, i;
 
-  sender = g_dbus_method_invocation_get_sender( invocation );
-
-  authority = polkit_authority_get_sync( NULL, &local_error );
-  if( !authority )
-  {
-    g_propagate_error( error, local_error );
+  if( !name )
     return FALSE;
+
+  len = strlen( name );
+  if( len == 0 || len > HOST_NAME_MAX )
+    return FALSE;
+
+  if( name[0] == '.' || name[len - 1] == '.' )
+    return FALSE;
+
+  for( i = 0; i < len; i++ )
+  {
+    gchar c = name[i];
+    if( !( g_ascii_isalnum(c) || c == '-' || c == '.' ) )
+      return FALSE;
+  }
+  return TRUE;
+}
+
+/* --------------------------------------------------------------------------
+   Pretty-hostname sanitiser
+
+   Some desktop shells (observed: GNOME Control Center's "Device Name"
+   field) call SetPrettyHostname with the *same* dotted/FQDN-style string
+   they also pass to SetStaticHostname, rather than a short human label.
+   If the incoming pretty name contains a dot and matches that pattern,
+   keep only the first label (e.g. "dair.example.net" -> "dair").  A
+   pretty name the caller deliberately set with spaces/punctuation but no
+   dot is left untouched.
+   -------------------------------------------------------------------------- */
+static gchar *
+rcl_derive_pretty_hostname( const gchar *name )
+{
+  const gchar *dot;
+
+  if( !name || name[0] == '\0' )
+    return g_strdup( "" );
+
+  dot = strchr( name, '.' );
+  if( !dot )
+    return g_strdup( name );
+
+  /* Looks like an FQDN/static hostname rather than a human label –
+     keep only the leading segment. */
+  return g_strndup( name, (gsize)(dot - name) );
+}
+
+static gboolean
+rcl_machine_info_value_is_safe( const gchar *value )
+{
+  const gchar *p;
+
+  if( !value )
+    return FALSE;
+
+  for( p = value; *p; p++ )
+  {
+    guchar c = (guchar) *p;
+    if( c < 0x20 || c == 0x7f )
+      return FALSE;
+    if( c == '"' || c == '\\' )
+      return FALSE;
+  }
+  return TRUE;
+}
+
+/* --------------------------------------------------------------------------
+   JSON string escaping
+
+   Used by the Describe method.  Not every field that ends up in the JSON
+   blob is sanitised at its source: /etc/os-release fields, DMI strings
+   (HardwareVendor/Model, FirmwareVersion) and the static hostname can all
+   contain double-quotes, backslashes or control characters.  Embedding them
+   raw with %s produces malformed JSON (and is an injection surface for
+   firmware-controlled DMI strings), so every string value is escaped here
+   per RFC 8259.  Returns a newly-allocated string (never NULL).  UTF-8
+   multibyte sequences (bytes >= 0x80) are passed through unchanged, which
+   is valid inside a JSON string.
+   -------------------------------------------------------------------------- */
+static gchar *
+json_escape_string( const gchar *s )
+{
+  GString *out = g_string_new( NULL );
+
+  if( !s )
+    return g_string_free( out, FALSE );
+
+  for( const gchar *p = s; *p; p++ )
+  {
+    guchar c = (guchar) *p;
+    switch( c )
+    {
+      case '"':  g_string_append( out, "\\\"" ); break;
+      case '\\': g_string_append( out, "\\\\" ); break;
+      case '\b': g_string_append( out, "\\b" );  break;
+      case '\f': g_string_append( out, "\\f" );  break;
+      case '\n': g_string_append( out, "\\n" );  break;
+      case '\r': g_string_append( out, "\\r" );  break;
+      case '\t': g_string_append( out, "\\t" );  break;
+      default:
+        if( c < 0x20 )
+          g_string_append_printf( out, "\\u%04x", c );
+        else
+          g_string_append_c( out, (gchar) c );
+        break;
+    }
   }
 
+  return g_string_free( out, FALSE );
+}
+
+/* --------------------------------------------------------------------------
+   PolKit authorisation (asynchronous)
+
+   The authorisation check is performed asynchronously so the agent password
+   dialog never blocks the single-threaded GMainLoop.  Each in-flight call
+   carries an AuthCtx describing the operation to run once (and only if) it
+   is authorised.  The operation handlers below complete the invocation
+   exactly once each.
+   -------------------------------------------------------------------------- */
+
+typedef enum
+{
+  OP_SET_HOSTNAME,
+  OP_SET_STATIC_HOSTNAME,
+  OP_SET_MACHINE_INFO,
+  OP_GET_PRODUCT_UUID,
+  OP_GET_HARDWARE_SERIAL,
+} HostnameOp;
+
+typedef struct
+{
+  RclHostnameDaemon     *daemon;       /* owned ref */
+  GDBusMethodInvocation *invocation;   /* completed exactly once */
+  HostnameOp             op;
+  gchar                 *name;         /* owned; SET_* operand (may be NULL) */
+  gchar                 *key;          /* owned; machine-info key (SET_MACHINE_INFO) */
+} AuthCtx;
+
+static void
+auth_ctx_free( AuthCtx *ctx )
+{
+  if( !ctx )
+    return;
+  g_clear_object( &ctx->daemon );
+  g_free( ctx->name );
+  g_free( ctx->key );
+  g_free( ctx );
+}
+
+/* ---- operation handlers: run only after a successful authorisation ---- */
+
+static void
+do_set_hostname( RclHostnameDaemon *daemon, const gchar *name,
+                 GDBusMethodInvocation *invocation )
+{
+  if( name && name[0] != '\0' )
+  {
+    if( !rcl_hostname_is_valid( name ) )
+    {
+      g_dbus_method_invocation_return_error( invocation,
+        G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Invalid hostname '%s'", name );
+      return;
+    }
+    if( sethostname( name, strlen(name) ) != 0 )
+    {
+      g_dbus_method_invocation_return_error( invocation,
+        G_IO_ERROR, g_io_error_from_errno(errno),
+        "sethostname failed: %s", g_strerror(errno) );
+      return;
+    }
+  }
+
+  rcl_daemon_sync_dbus_properties( daemon );
+  g_dbus_method_invocation_return_value( invocation, NULL );
+}
+
+static void
+do_set_static_hostname( RclHostnameDaemon *daemon, const gchar *name,
+                        GDBusMethodInvocation *invocation )
+{
+  if( name && name[0] != '\0' )
+  {
+    GError *error = NULL;
+    gchar  *content;
+
+    if( !rcl_hostname_is_valid( name ) )
+    {
+      g_dbus_method_invocation_return_error( invocation,
+        G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
+        "Invalid static hostname '%s'", name );
+      return;
+    }
+
+    content = g_strdup_printf( "%s\n", name );
+    if( !g_file_set_contents( RCL_HOSTNAME_FILE, content, -1, &error ) )
+    {
+      g_free( content );
+      g_dbus_method_invocation_return_gerror( invocation, error );
+      g_error_free( error );
+      return;
+    }
+    g_free( content );
+
+    if( sethostname( name, strlen(name) ) != 0 )
+      g_warning( "sethostname(%s) failed: %s", name, g_strerror(errno) );
+  }
+  else
+  {
+    g_unlink( RCL_HOSTNAME_FILE );
+  }
+
+  rcl_daemon_sync_dbus_properties( daemon );
+  g_dbus_method_invocation_return_value( invocation, NULL );
+}
+
+static void
+do_set_machine_info( RclHostnameDaemon *daemon, const gchar *key,
+                     const gchar *raw_name, GDBusMethodInvocation *invocation )
+{
+  GError      *error     = NULL;
+  gchar       *sanitised = NULL;
+  const gchar *name      = raw_name;
+
+  /* GNOME's "Device Name" field sometimes sends the FQDN it also gave
+     SetStaticHostname; reduce it to the first label for PrettyHostname. */
+  if( g_strcmp0( key, "PRETTY_HOSTNAME" ) == 0 )
+  {
+    sanitised = rcl_derive_pretty_hostname( name );
+    name = sanitised;
+  }
+
+  if( !rcl_machine_info_value_is_safe( name ) )
+  {
+    g_dbus_method_invocation_return_error( invocation,
+      G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
+      "Invalid value for %s: control characters and quotes are not allowed", key );
+    g_free( sanitised );
+    return;
+  }
+
+  if( !write_machine_info_key( key, name, &error ) )
+  {
+    g_dbus_method_invocation_return_gerror( invocation, error );
+    g_error_free( error );
+    g_free( sanitised );
+    return;
+  }
+
+  /* Run the generic resync first, then force this specific field to exactly
+     what we just wrote so a concurrent inotify-triggered resync reading a
+     stale/interleaved file cannot clobber the authoritative value. */
+  rcl_daemon_sync_dbus_properties( daemon );
+  rcl_daemon_force_machine_info_property( daemon, key, name );
+
+  g_free( sanitised );
+  g_dbus_method_invocation_return_value( invocation, NULL );
+}
+
+static void
+do_get_product_uuid( GDBusMethodInvocation *invocation )
+{
+  gchar          *uuid_str = read_dmi( RCL_DMI_PRODUCT_UUID );
+  GVariantBuilder bytes;
+
+  g_variant_builder_init( &bytes, G_VARIANT_TYPE("ay") );
+  for( gsize i = 0; uuid_str[i]; i++ )
+    g_variant_builder_add( &bytes, "y", (guchar)uuid_str[i] );
+  g_free( uuid_str );
+
+  g_dbus_method_invocation_return_value( invocation,
+    g_variant_new("(ay)", &bytes) );
+}
+
+static void
+do_get_hardware_serial( GDBusMethodInvocation *invocation )
+{
+  gchar *serial = read_dmi( RCL_DMI_CHASSIS_SERIAL );
+  g_dbus_method_invocation_return_value( invocation,
+    g_variant_new("(s)", serial) );
+  g_free( serial );
+}
+
+/* ---- async authorisation callback ---- */
+
+static void
+on_check_done( GObject *source, GAsyncResult *res, gpointer user_data )
+{
+  AuthCtx                   *ctx    = user_data;
+  PolkitAuthorizationResult *result;
+  GError                    *error  = NULL;
+
+  result = polkit_authority_check_authorization_finish(
+             POLKIT_AUTHORITY(source), res, &error );
+
+  if( !result )
+  {
+    g_dbus_method_invocation_return_gerror( ctx->invocation, error );
+    g_error_free( error );
+    auth_ctx_free( ctx );
+    return;
+  }
+
+  if( !polkit_authorization_result_get_is_authorized( result ) )
+  {
+    g_dbus_method_invocation_return_error( ctx->invocation,
+      G_DBUS_ERROR, G_DBUS_ERROR_AUTH_FAILED,
+      "Not authorised to perform the requested action" );
+    g_object_unref( result );
+    auth_ctx_free( ctx );
+    return;
+  }
+  g_object_unref( result );
+
+  switch( ctx->op )
+  {
+    case OP_SET_HOSTNAME:
+      do_set_hostname( ctx->daemon, ctx->name, ctx->invocation );
+      break;
+    case OP_SET_STATIC_HOSTNAME:
+      do_set_static_hostname( ctx->daemon, ctx->name, ctx->invocation );
+      break;
+    case OP_SET_MACHINE_INFO:
+      do_set_machine_info( ctx->daemon, ctx->key, ctx->name, ctx->invocation );
+      break;
+    case OP_GET_PRODUCT_UUID:
+      do_get_product_uuid( ctx->invocation );
+      break;
+    case OP_GET_HARDWARE_SERIAL:
+      do_get_hardware_serial( ctx->invocation );
+      break;
+  }
+
+  auth_ctx_free( ctx );
+}
+
+/* ---- async authorisation starter (takes ownership of ctx) ---- */
+
+static void
+check_polkit_async( AuthCtx *ctx, const gchar *action_id, gboolean interactive )
+{
+  RclHostnameDaemonPrivate     *priv = ctx->daemon->priv;
+  PolkitSubject                *subject;
+  PolkitCheckAuthorizationFlags flags;
+  const gchar                  *sender;
+
+  /* Acquire the authority handle lazily if the startup fetch failed.  This
+     is a fast, non-interactive call (it only connects to polkitd). */
+  if( priv->authority == NULL )
+  {
+    GError *err = NULL;
+    priv->authority = polkit_authority_get_sync( NULL, &err );
+    if( priv->authority == NULL )
+    {
+      g_dbus_method_invocation_return_gerror( ctx->invocation, err );
+      g_error_free( err );
+      auth_ctx_free( ctx );
+      return;
+    }
+  }
+
+  sender  = g_dbus_method_invocation_get_sender( ctx->invocation );
   subject = polkit_system_bus_name_new( sender );
   flags   = interactive
               ? POLKIT_CHECK_AUTHORIZATION_FLAGS_ALLOW_USER_INTERACTION
               : POLKIT_CHECK_AUTHORIZATION_FLAGS_NONE;
 
-  result = polkit_authority_check_authorization_sync(
-    authority, subject, action_id, NULL, flags, NULL, &local_error );
+  polkit_authority_check_authorization(
+    priv->authority, subject, action_id, NULL, flags,
+    NULL /* cancellable */, on_check_done, ctx );
 
-  if( local_error )
-  {
-    g_propagate_error( error, local_error );
-  }
-  else
-  {
-    authorised = polkit_authorization_result_get_is_authorized( result ) ||
-                 polkit_authorization_result_get_is_challenge( result );
-    if( !authorised )
-      g_set_error( error, G_DBUS_ERROR, G_DBUS_ERROR_AUTH_FAILED,
-                   "Not authorised to perform action '%s'", action_id );
-  }
-
-  g_clear_object( &result );
-  g_clear_object( &subject );
-  g_clear_object( &authority );
-
-  return authorised;
+  g_object_unref( subject );
 }
 
 /* --------------------------------------------------------------------------
@@ -605,7 +1065,8 @@ handle_get_property( GDBusConnection  *connection,
   if( g_strcmp0(property_name, "HardwareVendor"            ) == 0 ) RETURN_STR(hw_vendor);
   if( g_strcmp0(property_name, "HardwareModel"             ) == 0 ) RETURN_STR(hw_model);
   if( g_strcmp0(property_name, "FirmwareVersion"           ) == 0 ) RETURN_STR(firmware_version);
-  if( g_strcmp0(property_name, "FirmwareDate"              ) == 0 ) RETURN_STR(firmware_date);
+  if( g_strcmp0(property_name, "FirmwareDate"              ) == 0 )
+    return g_variant_new_uint64 (priv->firmware_date_usec);
 
 #undef RETURN_STR
 
@@ -645,81 +1106,37 @@ handle_method_call( GDBusConnection       *connection,
 {
   RclHostnameDaemon        *daemon = RCL_HOSTNAME_DAEMON( user_data );
   RclHostnameDaemonPrivate *priv   = daemon->priv;
-  GError *error = NULL;
+  AuthCtx                  *ctx;
 
-  /* ------------------------------------------------------------------
-     SetHostname – sets transient hostname via sethostname(2)
-     ------------------------------------------------------------------ */
-  if( g_strcmp0(method_name, "SetHostname") == 0 )
+  /* ---- transient / static hostname ---- */
+  if( g_strcmp0(method_name, "SetHostname") == 0 ||
+      g_strcmp0(method_name, "SetStaticHostname") == 0 )
   {
     const gchar *name;
     gboolean     interactive;
     g_variant_get( parameters, "(&sb)", &name, &interactive );
 
-    if( !check_polkit(invocation, RCL_HOSTNAME_POLKIT_SET_HOSTNAME,
-                      interactive, &error) )
-      goto method_error;
+    ctx = g_new0( AuthCtx, 1 );
+    ctx->daemon     = g_object_ref( daemon );
+    ctx->invocation = invocation;
+    ctx->name       = g_strdup( name );
 
-    if( name && name[0] != '\0' )
+    if( g_strcmp0(method_name, "SetHostname") == 0 )
     {
-      if( sethostname(name, strlen(name)) != 0 )
-      {
-        g_set_error( &error, G_IO_ERROR, g_io_error_from_errno(errno),
-                     "sethostname failed: %s", g_strerror(errno) );
-        goto method_error;
-      }
-    }
-
-    rcl_daemon_sync_dbus_properties( daemon );
-    g_dbus_method_invocation_return_value( invocation, NULL );
-    return;
-  }
-
-  /* ------------------------------------------------------------------
-     SetStaticHostname – writes /etc/hostname
-     ------------------------------------------------------------------ */
-  if( g_strcmp0(method_name, "SetStaticHostname") == 0 )
-  {
-    const gchar *name;
-    gboolean     interactive;
-    g_variant_get( parameters, "(&sb)", &name, &interactive );
-
-    if( !check_polkit(invocation, RCL_HOSTNAME_POLKIT_SET_STATIC,
-                      interactive, &error) )
-      goto method_error;
-
-    if( name && name[0] != '\0' )
-    {
-      gchar *content = g_strdup_printf( "%s\n", name );
-      if( !g_file_set_contents(RCL_HOSTNAME_FILE, content, -1, &error) )
-      {
-        g_free( content );
-        goto method_error;
-      }
-      g_free( content );
-
-      /* Also push to transient hostname so they stay in sync */
-      sethostname( name, strlen(name) );
+      ctx->op = OP_SET_HOSTNAME;
+      check_polkit_async( ctx, RCL_HOSTNAME_POLKIT_SET_HOSTNAME, interactive );
     }
     else
     {
-      /* Empty string – remove static hostname file */
-      g_unlink( RCL_HOSTNAME_FILE );
+      ctx->op = OP_SET_STATIC_HOSTNAME;
+      check_polkit_async( ctx, RCL_HOSTNAME_POLKIT_SET_STATIC, interactive );
     }
-
-    rcl_daemon_sync_dbus_properties( daemon );
-    g_dbus_method_invocation_return_value( invocation, NULL );
     return;
   }
 
-  /* ------------------------------------------------------------------
-     SetPrettyHostname / SetIconName / SetChassis / SetDeployment / SetLocation
-     – all write a key to /etc/machine-info
-     ------------------------------------------------------------------ */
+  /* ---- machine-info fields ---- */
   {
     const gchar *key = NULL;
-    const gchar *name;
-    gboolean     interactive;
 
     if     ( g_strcmp0(method_name, "SetPrettyHostname") == 0 ) key = "PRETTY_HOSTNAME";
     else if( g_strcmp0(method_name, "SetIconName")       == 0 ) key = "ICON_NAME";
@@ -729,115 +1146,94 @@ handle_method_call( GDBusConnection       *connection,
 
     if( key )
     {
+      const gchar *name;
+      gboolean     interactive;
       g_variant_get( parameters, "(&sb)", &name, &interactive );
 
-      if( !check_polkit(invocation, RCL_HOSTNAME_POLKIT_SET_MACHINE_INFO,
-                        interactive, &error) )
-        goto method_error;
+      ctx = g_new0( AuthCtx, 1 );
+      ctx->daemon     = g_object_ref( daemon );
+      ctx->invocation = invocation;
+      ctx->op         = OP_SET_MACHINE_INFO;
+      ctx->key        = g_strdup( key );
+      ctx->name       = g_strdup( name );
 
-      if( !write_machine_info_key(key, name, &error) )
-        goto method_error;
-
-      rcl_daemon_sync_dbus_properties( daemon );
-      g_dbus_method_invocation_return_value( invocation, NULL );
+      check_polkit_async( ctx, RCL_HOSTNAME_POLKIT_SET_MACHINE_INFO, interactive );
       return;
     }
   }
 
-  /* ------------------------------------------------------------------
-     GetProductUUID – returns bytes from /sys/class/dmi/id/product_uuid
-     ------------------------------------------------------------------ */
-  if( g_strcmp0(method_name, "GetProductUUID") == 0 )
+  /* ---- sensitive hardware reads ---- */
+  if( g_strcmp0(method_name, "GetProductUUID") == 0 ||
+      g_strcmp0(method_name, "GetHardwareSerial") == 0 )
   {
     gboolean interactive;
     g_variant_get( parameters, "(b)", &interactive );
 
-    /* Reading product_uuid requires root on most systems; use polkit */
-    if( !check_polkit(invocation, RCL_HOSTNAME_POLKIT_SET_HOSTNAME /* reuse */,
-                      interactive, &error) )
-      goto method_error;
+    ctx = g_new0( AuthCtx, 1 );
+    ctx->daemon     = g_object_ref( daemon );
+    ctx->invocation = invocation;
 
-    gchar *uuid_str = read_dmi( RCL_DMI_PRODUCT_UUID );
-    GVariantBuilder bytes;
-    g_variant_builder_init( &bytes, G_VARIANT_TYPE("ay") );
-    for( gsize i = 0; uuid_str[i]; i++ )
-      g_variant_builder_add( &bytes, "y", (guchar)uuid_str[i] );
-    g_free( uuid_str );
-
-    g_dbus_method_invocation_return_value( invocation,
-      g_variant_new("(ay)", &bytes) );
+    if( g_strcmp0(method_name, "GetProductUUID") == 0 )
+    {
+      ctx->op = OP_GET_PRODUCT_UUID;
+      check_polkit_async( ctx, RCL_HOSTNAME_POLKIT_GET_PRODUCT_UUID, interactive );
+    }
+    else
+    {
+      ctx->op = OP_GET_HARDWARE_SERIAL;
+      check_polkit_async( ctx, RCL_HOSTNAME_POLKIT_GET_HARDWARE_SERIAL, interactive );
+    }
     return;
   }
 
-  /* ------------------------------------------------------------------
-     GetHardwareSerial
-     ------------------------------------------------------------------ */
-  if( g_strcmp0(method_name, "GetHardwareSerial") == 0 )
-  {
-    gboolean interactive;
-    g_variant_get( parameters, "(b)", &interactive );
-
-    if( !check_polkit(invocation, RCL_HOSTNAME_POLKIT_SET_HOSTNAME /* reuse */,
-                      interactive, &error) )
-      goto method_error;
-
-    gchar *serial = read_dmi( RCL_DMI_CHASSIS_SERIAL );
-    g_dbus_method_invocation_return_value( invocation,
-      g_variant_new("(s)", serial) );
-    g_free( serial );
-    return;
-  }
-
-  /* ------------------------------------------------------------------
-     Describe – return all properties as a JSON blob
-     ------------------------------------------------------------------ */
   if( g_strcmp0(method_name, "Describe") == 0 )
   {
-    gchar *json = g_strdup_printf(
-      "{"
-      "\"Hostname\":\"%s\","
-      "\"StaticHostname\":\"%s\","
-      "\"PrettyHostname\":\"%s\","
-      "\"IconName\":\"%s\","
-      "\"Chassis\":\"%s\","
-      "\"Deployment\":\"%s\","
-      "\"Location\":\"%s\","
-      "\"KernelName\":\"%s\","
-      "\"KernelRelease\":\"%s\","
-      "\"KernelVersion\":\"%s\","
-      "\"OperatingSystemPrettyName\":\"%s\","
-      "\"HardwareVendor\":\"%s\","
-      "\"HardwareModel\":\"%s\""
-      "}",
-      priv->hostname         ? priv->hostname         : "",
-      priv->static_hostname  ? priv->static_hostname  : "",
-      priv->pretty_hostname  ? priv->pretty_hostname  : "",
-      priv->icon_name        ? priv->icon_name        : "",
-      priv->chassis          ? priv->chassis          : "",
-      priv->deployment       ? priv->deployment       : "",
-      priv->location         ? priv->location         : "",
-      priv->kernel_name      ? priv->kernel_name      : "",
-      priv->kernel_release   ? priv->kernel_release   : "",
-      priv->kernel_version   ? priv->kernel_version   : "",
-      priv->os_pretty_name   ? priv->os_pretty_name   : "",
-      priv->hw_vendor        ? priv->hw_vendor        : "",
-      priv->hw_model         ? priv->hw_model         : "" );
+    GString *js = g_string_new( "{" );
+
+    /* Every string value is JSON-escaped: fields sourced from os-release,
+       DMI and the static hostname are not sanitised at their source and may
+       contain quotes/backslashes/control characters. */
+#define ADD_STR( jname, val )                                       \
+    do {                                                            \
+      gchar *_e = json_escape_string( (val) );                     \
+      g_string_append_printf( js, "\"%s\":\"%s\",", (jname), _e );  \
+      g_free( _e );                                                 \
+    } while( 0 )
+
+    ADD_STR( "Hostname",                  priv->hostname );
+    ADD_STR( "StaticHostname",            priv->static_hostname );
+    ADD_STR( "PrettyHostname",            priv->pretty_hostname );
+    ADD_STR( "DefaultHostname",           priv->default_hostname );
+    ADD_STR( "HostnameSource",            priv->hostname_source );
+    ADD_STR( "IconName",                  priv->icon_name );
+    ADD_STR( "Chassis",                   priv->chassis );
+    ADD_STR( "Deployment",                priv->deployment );
+    ADD_STR( "Location",                  priv->location );
+    ADD_STR( "KernelName",                priv->kernel_name );
+    ADD_STR( "KernelRelease",             priv->kernel_release );
+    ADD_STR( "KernelVersion",             priv->kernel_version );
+    ADD_STR( "OperatingSystemPrettyName", priv->os_pretty_name );
+    ADD_STR( "OperatingSystemCPEName",    priv->os_cpe_name );
+    ADD_STR( "OperatingSystemHomeURL",    priv->os_home_url );
+    ADD_STR( "HardwareVendor",            priv->hw_vendor );
+    ADD_STR( "HardwareModel",             priv->hw_model );
+    ADD_STR( "FirmwareVersion",           priv->firmware_version );
+
+#undef ADD_STR
+
+    /* FirmwareDate is numeric (type 't') and closes the object. */
+    g_string_append_printf( js, "\"FirmwareDate\":%" G_GUINT64_FORMAT "}",
+                            priv->firmware_date_usec );
 
     g_dbus_method_invocation_return_value( invocation,
-      g_variant_new("(s)", json) );
-    g_free( json );
+      g_variant_new("(s)", js->str) );
+    g_string_free( js, TRUE );
     return;
   }
 
-  /* Unknown method */
   g_dbus_method_invocation_return_error( invocation,
     G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD,
     "Unknown method '%s'", method_name );
-  return;
-
-method_error:
-  g_dbus_method_invocation_return_gerror( invocation, error );
-  g_error_free( error );
 }
 
 /* --------------------------------------------------------------------------
@@ -896,8 +1292,20 @@ rcl_daemon_startup( RclDaemon *daemon, GDBusConnection *connection )
     return FALSE;
   }
 
-  /* Populate initial property values */
   rcl_daemon_sync_dbus_properties( self );
+
+  /* Acquire the PolKit authority once up front.  This is non-interactive and
+     fast; if polkitd is not reachable yet we retry lazily on first use. */
+  {
+    GError *pk_error = NULL;
+    priv->authority = polkit_authority_get_sync( NULL, &pk_error );
+    if( priv->authority == NULL )
+    {
+      g_warning( "Could not acquire PolKit authority at startup: %s",
+                 pk_error ? pk_error->message : "(unknown)" );
+      g_clear_error( &pk_error );
+    }
+  }
 
   g_debug( "hostnamed D-Bus object registered at /org/freedesktop/hostname1" );
   return TRUE;
@@ -940,6 +1348,8 @@ rcl_hostname_daemon_finalize( GObject *object )
 {
   RclHostnameDaemonPrivate *priv = RCL_HOSTNAME_DAEMON(object)->priv;
 
+  g_clear_object( &priv->authority );
+
   g_free( priv->hostname );
   g_free( priv->static_hostname );
   g_free( priv->pretty_hostname );
@@ -958,7 +1368,7 @@ rcl_hostname_daemon_finalize( GObject *object )
   g_free( priv->hw_vendor );
   g_free( priv->hw_model );
   g_free( priv->firmware_version );
-  g_free( priv->firmware_date );
+  /* firmware_date_usec is a guint64 scalar, no g_free needed */
 
   G_OBJECT_CLASS(rcl_hostname_daemon_parent_class)->finalize(object);
 }

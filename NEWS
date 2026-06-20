@@ -1,0 +1,49 @@
+# Changelog
+
+All notable changes to `hostnamed` are documented in this file, derived from the project's git history.
+
+## [Unreleased] - 2026-06-20
+
+### Security
+- Fixed a polkit authorization bypass and a JSON escaping bug in the D-Bus interface (PR #1, rizitis/main) (`9acb293`, `96438ab`)
+- Reworked polkit authorization checks to run **asynchronously** via `PolkitAuthority` callbacks instead of blocking sync calls, so the agent password dialog no longer stalls the single-threaded main loop (`8afc587`)
+- Added two dedicated polkit actions, `org.freedesktop.hostname1.get-product-uuid` and `org.freedesktop.hostname1.get-hardware-serial`, replacing reuse of the `set-hostname` action for hardware reads (`8afc587`)
+- Added defence-in-depth value validation directly in the machine-info writer (`write_machine_info_key`), independent of caller-side checks (`8afc587`)
+
+### Changed
+- Cleaned up `hostnamed.SlackBuild`, removing leftover `localectl` references (`2154cfb`)
+- Reworked hostname/machine-info file path references and added dedicated config options for `os-release` and `machine-info` paths (`ae6c851`, `e61b73e`, `1d59143`, `df1b9a4`)
+- Added direct property-cache updates for machine-info keys, correctly emitting `PropertiesChanged` instead of relying on a full resync (`ea8a974`)
+- Implemented a pretty-hostname sanitiser to derive a clean label from an FQDN (`b1c9527`)
+- Refactored the polkit `.rules.in` logic for hostname management (`68c91f7`, `38ddd77`)
+
+### Added
+- Added GPLv2 license file (`de0dd36`)
+
+## [0.2.0] - 2026-06-19
+- Bumped version 0.1.0 → 0.2.0 (`3a072dc`)
+
+## [0.1.0] - 2026-05-31 to 2026-06-17
+
+### Added
+- Initial project scaffolding: `main.c`, `rcl-hostname.c`/`.h`, `meson.build`, `meson_options.txt`, `README.md`, `LINGUAS`, `POTFILES` (`0056f42`, `233e8cf`, `ac4da26`, `952f142`, `2184bd5`)
+- D-Bus interface description (`org.freedesktop.hostname1.xml`), service activation file (`.service.in`), polkit policy (`.policy`), and polkit rules (later templated as `.rules.in`) (`02fe5db`, `94dbb9e`, `64f6dc4`, `d630173`, `5251a8a`)
+- SlackBuild packaging script (`2f36c95`), briefly renamed to `slack-desc` then restored (`db3bf5c`)
+- `hostnamectl` and `localectl` companion shell scripts (`a3ed2a8`, `581d92b`)
+- Input validation for hostnames and machine-info values (`65c0675`)
+- `default_hostname`, privileged-group, and hostname-file configuration options (`d14df64`, `09b8666`)
+
+### Changed
+- Refactored authorization handling in `rcl-hostname.c` (`173a8b8`)
+- Changed `FirmwareDate` D-Bus property type to `t` (uint64) and implemented microsecond-since-epoch parsing (`e5c2bc2`)
+- Refactored the `RclState` structure and logging mechanism (`51c7a00`)
+- Tightened the D-Bus security policy in `org.freedesktop.hostname1.conf`, replacing explanatory comments with explicit interface allow-rules (`47e7cce`)
+- Simplified the polkit rule, removing an unneeded early return for non-privileged subjects (`fa2e743`)
+- Refactored `hostnamectl` for clearer structure and parsing (`dff42ce`)
+- Replaced decorative comment banners with plain separators across the codebase (`19e98c1`)
+- Cleaned up and reformatted `meson.build` / `meson_options.txt` across several passes, removing dead/commented sections (`616ede9`, `be0bb13`, `4c03939`, `e4648f2`, `15de2e1`)
+- Updated copyright year and author metadata in `rcl-hostname.c` (`8205b67`)
+- Numerous incremental updates to `main.c`, `rcl-hostname.h`, and `meson.build` while stabilizing the initial build (`1ee763e`, `dbbd846`, `5a52b7c`, `7bfa26d`, `59f6673`, `661a430`, `30e4ff1`, `51cdd55`, `86a343c`, `f04035b`, `e4b5d9d`, `2a8e080`, `c3e4bfe`, `017e1c3`, `e3ad6e5`, `1574abd`)
+
+### Removed
+- Deleted and recreated `hostnamectl` during early iteration (`9dd6682`, `30a0201`, `6d92e35`)

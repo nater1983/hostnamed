@@ -1,0 +1,12 @@
+polkit.addRule(
+  function(action, subject) {
+    if ((action.id == "org.freedesktop.hostname1.set-hostname" ||
+         action.id == "org.freedesktop.hostname1.set-static-hostname" ||
+         action.id == "org.freedesktop.hostname1.set-machine-info" ||
+         action.id == "org.freedesktop.hostname1.get-product-uuid" ||
+         action.id == "org.freedesktop.hostname1.get-hardware-serial")
+        && subject.isInGroup("@PRIVILEGED_GROUP@")) {
+      return polkit.Result.YES;
+    }
+  }
+);

@@ -1,0 +1,58 @@
+option(
+  'polkit',
+  type        : 'feature',
+  value       : 'auto',
+  description : 'Use polkit for authorising Set* D-Bus method calls',
+)
+
+option(
+  'dbus_system_service_dir',
+  type        : 'string',
+  value       : '',
+  description : 'Directory for D-Bus system service files '
+              + '(default: <datadir>/dbus-1/system-services)',
+)
+
+option(
+  'dbus_system_conf_dir',
+  type        : 'string',
+  value       : '',
+  description : 'Directory for D-Bus system bus configuration files '
+              + '(default: <sysconfdir>/dbus-1/system.d)',
+)
+
+option(
+  'polkit_policy_dir',
+  type        : 'string',
+  value       : '',
+  description : 'Directory for polkit .policy files '
+              + '(default: <datadir>/polkit-1/actions)',
+)
+
+option(
+  'hostname_conf',
+  type        : 'string',
+  value       : '/etc/HOSTNAME',
+  description : 'Path to the hostname config file',
+)
+
+option(
+  'os_conf',
+  type        : 'string',
+  value       : '/etc/os-release',
+  description : 'Path to the os-release file',
+)
+
+option(
+  'machine_conf',
+  type        : 'string',
+  value       : '/etc/machine-info',
+  description : 'Path to the machine-info file',
+)
+
+option(
+  'privileged-group',
+  type        : 'string',
+  value       : 'wheel',
+  description : 'Group allowed to change hostname without authentication',
+)

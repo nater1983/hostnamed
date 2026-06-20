@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023 Andrey V.Kosteltsev <kx@radix.pro>
+ * Copyright (C) 2026 Nathaniel Russell <naterussell83@gmail.com>
  *
  * Licensed under the GNU General Public License Version 2
  *
@@ -145,15 +145,15 @@ void rcl_daemon_sync_dbus_properties ( RclHostnameDaemon *daemon );
 #define RCL_HOSTNAME_POLKIT_SET_STATIC     "org.freedesktop.hostname1.set-static-hostname"
 #define RCL_HOSTNAME_POLKIT_SET_MACHINE_INFO \
                                            "org.freedesktop.hostname1.set-machine-info"
+#define RCL_HOSTNAME_POLKIT_GET_PRODUCT_UUID \
+                                           "org.freedesktop.hostname1.get-product-uuid"
+#define RCL_HOSTNAME_POLKIT_GET_HARDWARE_SERIAL \
+                                           "org.freedesktop.hostname1.get-hardware-serial"
 
 /*---------------------------------------------------------------------------
   File paths – gathered in one place so they're easy to override for tests
   or alternative distro layouts.
  ---------------------------------------------------------------------------*/
-
-#define RCL_HOSTNAME_FILE          "/etc/HOSTNAME"
-#define RCL_MACHINE_INFO_FILE      "/etc/machine-info"
-#define RCL_OS_RELEASE_FILE        "/etc/os-release"
 
 /* DMI sysfs paths (Linux-specific) */
 #define RCL_DMI_CHASSIS_TYPE       "/sys/class/dmi/id/chassis_type"
