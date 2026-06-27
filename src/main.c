@@ -458,7 +458,7 @@ gint main(gint argc, gchar **argv)
     g_clear_error(&error);
   }
 
-  machineinfo_file = g_file_new_for_path("RCL_MACHINE_FILE");
+  machineinfo_file = g_file_new_for_path(RCL_MACHINE_INFO_FILE);
   machineinfo_mon  = g_file_monitor_file(machineinfo_file,
                                          G_FILE_MONITOR_WATCH_MOVES,
                                          NULL, &error);
@@ -467,7 +467,7 @@ gint main(gint argc, gchar **argv)
                              G_CALLBACK(rcl_main_inotify_cb), state);
   else
   {
-    g_warning("could not watch RCL_MACHINE_FILE: %s", error->message);
+    g_warning("could not watch %s: %s", RCL_MACHINE_INFO_FILE, error->message);
     g_clear_error(&error);
   }
 
