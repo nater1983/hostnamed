@@ -1,7 +1,7 @@
 project(
   'hostnamed',
   'c',
-  version         : '0.2.6',
+  version         : '0.2.7',
   license         : 'GPL-2.0-or-later',
   meson_version   : '>= 0.58.0',
   default_options : [
