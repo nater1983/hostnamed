@@ -22,7 +22,8 @@ msgstr "Définir le nom d'hôte transitoire"
 
 #: data/org.freedesktop.hostname1.policy:10
 msgid "Authentication is required to set the transient host name."
-msgstr "Une authentification est requise pour définir le nom d'hôte transitoire."
+msgstr ""
+"Une authentification est requise pour définir le nom d'hôte transitoire."
 
 #: data/org.freedesktop.hostname1.policy:22
 msgid "Set the static host name"
@@ -38,7 +39,8 @@ msgstr "Définir les informations machine (nom d'affichage, icône, châssis)"
 
 #: data/org.freedesktop.hostname1.policy:33
 msgid "Authentication is required to set machine information."
-msgstr "Une authentification est requise pour définir les informations machine."
+msgstr ""
+"Une authentification est requise pour définir les informations machine."
 
 #: data/org.freedesktop.hostname1.policy:42
 msgid "Get the hardware product UUID"
@@ -54,4 +56,5 @@ msgstr "Obtenir le numéro de série matériel"
 
 #: data/org.freedesktop.hostname1.policy:53
 msgid "Authentication is required to read the hardware serial number."
-msgstr "Une authentification est requise pour lire le numéro de série matériel."
+msgstr ""
+"Une authentification est requise pour lire le numéro de série matériel."

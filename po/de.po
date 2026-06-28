@@ -22,7 +22,9 @@ msgstr "Den transienten Hostnamen setzen"
 
 #: data/org.freedesktop.hostname1.policy:10
 msgid "Authentication is required to set the transient host name."
-msgstr "Zur Änderung des transienten Hostnamens ist eine Authentifizierung erforderlich."
+msgstr ""
+"Zur Änderung des transienten Hostnamens ist eine Authentifizierung "
+"erforderlich."
 
 #: data/org.freedesktop.hostname1.policy:22
 msgid "Set the static host name"
@@ -30,7 +32,9 @@ msgstr "Den statischen Hostnamen setzen"
 
 #: data/org.freedesktop.hostname1.policy:23
 msgid "Authentication is required to set the static host name."
-msgstr "Zur Änderung des statischen Hostnamens ist eine Authentifizierung erforderlich."
+msgstr ""
+"Zur Änderung des statischen Hostnamens ist eine Authentifizierung "
+"erforderlich."
 
 #: data/org.freedesktop.hostname1.policy:32
 msgid "Set machine information (pretty name, icon, chassis)"
@@ -38,7 +42,8 @@ msgstr "Geräteinformationen setzen (Anzeigename, Symbol, Gehäuse)"
 
 #: data/org.freedesktop.hostname1.policy:33
 msgid "Authentication is required to set machine information."
-msgstr "Zur Änderung der Geräteinformationen ist eine Authentifizierung erforderlich."
+msgstr ""
+"Zur Änderung der Geräteinformationen ist eine Authentifizierung erforderlich."
 
 #: data/org.freedesktop.hostname1.policy:42
 msgid "Get the hardware product UUID"
@@ -46,7 +51,8 @@ msgstr "Die Hardware-Produkt-UUID abrufen"
 
 #: data/org.freedesktop.hostname1.policy:43
 msgid "Authentication is required to read the hardware product UUID."
-msgstr "Zum Lesen der Hardware-Produkt-UUID ist eine Authentifizierung erforderlich."
+msgstr ""
+"Zum Lesen der Hardware-Produkt-UUID ist eine Authentifizierung erforderlich."
 
 #: data/org.freedesktop.hostname1.policy:52
 msgid "Get the hardware serial number"
@@ -54,4 +60,5 @@ msgstr "Die Hardware-Seriennummer abrufen"
 
 #: data/org.freedesktop.hostname1.policy:53
 msgid "Authentication is required to read the hardware serial number."
-msgstr "Zum Lesen der Hardware-Seriennummer ist eine Authentifizierung erforderlich."
+msgstr ""
+"Zum Lesen der Hardware-Seriennummer ist eine Authentifizierung erforderlich."

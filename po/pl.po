@@ -46,7 +46,8 @@ msgstr "Pobierz UUID produktu sprzętowego"
 
 #: data/org.freedesktop.hostname1.policy:43
 msgid "Authentication is required to read the hardware product UUID."
-msgstr "Aby odczytać UUID produktu sprzętowego, wymagane jest uwierzytelnienie."
+msgstr ""
+"Aby odczytać UUID produktu sprzętowego, wymagane jest uwierzytelnienie."
 
 #: data/org.freedesktop.hostname1.policy:52
 msgid "Get the hardware serial number"
