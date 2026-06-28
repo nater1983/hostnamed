@@ -1,6 +1,11 @@
 # Supported language codes, one per line.
-# Add a code here and create the matching po/<code>.po file to enable it.
-# Example:
-# de
-# fr
-# es
+de
+es
+fr
+it
+ja
+nl
+pl
+pt_BR
+ru
+zh_CN

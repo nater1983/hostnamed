@@ -1,0 +1,57 @@
+# Polish translation of hostnamed.
+# Copyright (C) 2024 Nathan Owens
+# This file is distributed under the same license as the hostnamed package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: hostnamed 0.1\n"
+"Report-Msgid-Bugs-To: https://github.com/nater1983/hostnamed/issues\n"
+"POT-Creation-Date: 2025-01-01 00:00+0000\n"
+"PO-Revision-Date: 2025-01-01 00:00+0000\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: Polish <pl@li.org>\n"
+"Language: pl\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: data/org.freedesktop.hostname1.policy:9
+msgid "Set the transient host name"
+msgstr "Ustaw tymczasową nazwę hosta"
+
+#: data/org.freedesktop.hostname1.policy:10
+msgid "Authentication is required to set the transient host name."
+msgstr "Aby ustawić tymczasową nazwę hosta, wymagane jest uwierzytelnienie."
+
+#: data/org.freedesktop.hostname1.policy:22
+msgid "Set the static host name"
+msgstr "Ustaw statyczną nazwę hosta"
+
+#: data/org.freedesktop.hostname1.policy:23
+msgid "Authentication is required to set the static host name."
+msgstr "Aby ustawić statyczną nazwę hosta, wymagane jest uwierzytelnienie."
+
+#: data/org.freedesktop.hostname1.policy:32
+msgid "Set machine information (pretty name, icon, chassis)"
+msgstr "Ustaw informacje o komputerze (nazwa wyświetlana, ikona, obudowa)"
+
+#: data/org.freedesktop.hostname1.policy:33
+msgid "Authentication is required to set machine information."
+msgstr "Aby ustawić informacje o komputerze, wymagane jest uwierzytelnienie."
+
+#: data/org.freedesktop.hostname1.policy:42
+msgid "Get the hardware product UUID"
+msgstr "Pobierz UUID produktu sprzętowego"
+
+#: data/org.freedesktop.hostname1.policy:43
+msgid "Authentication is required to read the hardware product UUID."
+msgstr "Aby odczytać UUID produktu sprzętowego, wymagane jest uwierzytelnienie."
+
+#: data/org.freedesktop.hostname1.policy:52
+msgid "Get the hardware serial number"
+msgstr "Pobierz numer seryjny sprzętu"
+
+#: data/org.freedesktop.hostname1.policy:53
+msgid "Authentication is required to read the hardware serial number."
+msgstr "Aby odczytać numer seryjny sprzętu, wymagane jest uwierzytelnienie."

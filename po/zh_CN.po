@@ -1,0 +1,57 @@
+# Simplified Chinese translation of hostnamed.
+# Copyright (C) 2024 Nathan Owens
+# This file is distributed under the same license as the hostnamed package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: hostnamed 0.1\n"
+"Report-Msgid-Bugs-To: https://github.com/nater1983/hostnamed/issues\n"
+"POT-Creation-Date: 2025-01-01 00:00+0000\n"
+"PO-Revision-Date: 2025-01-01 00:00+0000\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: Simplified Chinese <zh_CN@li.org>\n"
+"Language: zh_CN\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: data/org.freedesktop.hostname1.policy:9
+msgid "Set the transient host name"
+msgstr "设置临时主机名"
+
+#: data/org.freedesktop.hostname1.policy:10
+msgid "Authentication is required to set the transient host name."
+msgstr "设置临时主机名需要身份验证。"
+
+#: data/org.freedesktop.hostname1.policy:22
+msgid "Set the static host name"
+msgstr "设置静态主机名"
+
+#: data/org.freedesktop.hostname1.policy:23
+msgid "Authentication is required to set the static host name."
+msgstr "设置静态主机名需要身份验证。"
+
+#: data/org.freedesktop.hostname1.policy:32
+msgid "Set machine information (pretty name, icon, chassis)"
+msgstr "设置计算机信息（显示名称、图标、机箱类型）"
+
+#: data/org.freedesktop.hostname1.policy:33
+msgid "Authentication is required to set machine information."
+msgstr "设置计算机信息需要身份验证。"
+
+#: data/org.freedesktop.hostname1.policy:42
+msgid "Get the hardware product UUID"
+msgstr "获取硬件产品UUID"
+
+#: data/org.freedesktop.hostname1.policy:43
+msgid "Authentication is required to read the hardware product UUID."
+msgstr "读取硬件产品UUID需要身份验证。"
+
+#: data/org.freedesktop.hostname1.policy:52
+msgid "Get the hardware serial number"
+msgstr "获取硬件序列号"
+
+#: data/org.freedesktop.hostname1.policy:53
+msgid "Authentication is required to read the hardware serial number."
+msgstr "读取硬件序列号需要身份验证。"

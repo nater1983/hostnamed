@@ -1,0 +1,57 @@
+# Brazilian Portuguese translation of hostnamed.
+# Copyright (C) 2024 Nathan Owens
+# This file is distributed under the same license as the hostnamed package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: hostnamed 0.1\n"
+"Report-Msgid-Bugs-To: https://github.com/nater1983/hostnamed/issues\n"
+"POT-Creation-Date: 2025-01-01 00:00+0000\n"
+"PO-Revision-Date: 2025-01-01 00:00+0000\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: Brazilian Portuguese <pt_BR@li.org>\n"
+"Language: pt_BR\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: data/org.freedesktop.hostname1.policy:9
+msgid "Set the transient host name"
+msgstr "Definir o nome de host transitório"
+
+#: data/org.freedesktop.hostname1.policy:10
+msgid "Authentication is required to set the transient host name."
+msgstr "É necessária autenticação para definir o nome de host transitório."
+
+#: data/org.freedesktop.hostname1.policy:22
+msgid "Set the static host name"
+msgstr "Definir o nome de host estático"
+
+#: data/org.freedesktop.hostname1.policy:23
+msgid "Authentication is required to set the static host name."
+msgstr "É necessária autenticação para definir o nome de host estático."
+
+#: data/org.freedesktop.hostname1.policy:32
+msgid "Set machine information (pretty name, icon, chassis)"
+msgstr "Definir informações da máquina (nome amigável, ícone, chassi)"
+
+#: data/org.freedesktop.hostname1.policy:33
+msgid "Authentication is required to set machine information."
+msgstr "É necessária autenticação para definir as informações da máquina."
+
+#: data/org.freedesktop.hostname1.policy:42
+msgid "Get the hardware product UUID"
+msgstr "Obter o UUID do produto de hardware"
+
+#: data/org.freedesktop.hostname1.policy:43
+msgid "Authentication is required to read the hardware product UUID."
+msgstr "É necessária autenticação para ler o UUID do produto de hardware."
+
+#: data/org.freedesktop.hostname1.policy:52
+msgid "Get the hardware serial number"
+msgstr "Obter o número de série do hardware"
+
+#: data/org.freedesktop.hostname1.policy:53
+msgid "Authentication is required to read the hardware serial number."
+msgstr "É necessária autenticação para ler o número de série do hardware."
