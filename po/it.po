@@ -34,11 +34,13 @@ msgstr "È richiesta l'autenticazione per impostare il nome host statico."
 
 #: data/org.freedesktop.hostname1.policy:32
 msgid "Set machine information (pretty name, icon, chassis)"
-msgstr "Imposta le informazioni del computer (nome visualizzato, icona, chassis)"
+msgstr ""
+"Imposta le informazioni del computer (nome visualizzato, icona, chassis)"
 
 #: data/org.freedesktop.hostname1.policy:33
 msgid "Authentication is required to set machine information."
-msgstr "È richiesta l'autenticazione per impostare le informazioni del computer."
+msgstr ""
+"È richiesta l'autenticazione per impostare le informazioni del computer."
 
 #: data/org.freedesktop.hostname1.policy:42
 msgid "Get the hardware product UUID"
@@ -54,4 +56,5 @@ msgstr "Ottieni il numero di serie dell'hardware"
 
 #: data/org.freedesktop.hostname1.policy:53
 msgid "Authentication is required to read the hardware serial number."
-msgstr "È richiesta l'autenticazione per leggere il numero di serie dell'hardware."
+msgstr ""
+"È richiesta l'autenticazione per leggere il numero di serie dell'hardware."

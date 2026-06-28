@@ -22,7 +22,8 @@ msgstr "Establecer el nombre de host transitorio"
 
 #: data/org.freedesktop.hostname1.policy:10
 msgid "Authentication is required to set the transient host name."
-msgstr "Se requiere autenticación para establecer el nombre de host transitorio."
+msgstr ""
+"Se requiere autenticación para establecer el nombre de host transitorio."
 
 #: data/org.freedesktop.hostname1.policy:22
 msgid "Set the static host name"
