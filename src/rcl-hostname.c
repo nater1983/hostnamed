@@ -373,14 +373,6 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
                    read_key_value_file( RCL_MACHINE_INFO_FILE, "PRETTY_HOSTNAME" ),
                    "PrettyHostname" );
 
-  UPDATE_STR_PROP( icon_name,
-                   read_key_value_file( RCL_MACHINE_INFO_FILE, "ICON_NAME" ),
-                   "IconName" );
-
-  UPDATE_STR_PROP( chassis,
-                   read_key_value_file( RCL_MACHINE_INFO_FILE, "CHASSIS" ),
-                   "Chassis" );
-
   UPDATE_STR_PROP( deployment,
                    read_key_value_file( RCL_MACHINE_INFO_FILE, "DEPLOYMENT" ),
                    "Deployment" );
@@ -389,29 +381,38 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
                    read_key_value_file( RCL_MACHINE_INFO_FILE, "LOCATION" ),
                    "Location" );
 
-  /* ---- fall back chassis / icon from DMI if not set in machine-info ---- */
-  if( priv->chassis == NULL || priv->chassis[0] == '\0' )
+  /* ---- chassis / icon: machine-info wins, DMI is the fallback ----
+     The effective value is computed first and then fed through
+     UPDATE_STR_PROP exactly once, so an unchanged value never produces a
+     PropertiesChanged entry (previously the machine-info read blanked the
+     field and the DMI fallback re-set it on every sync, emitting duplicate
+     Chassis/IconName entries each time). */
   {
-    gchar *dmi_chassis_type = read_dmi( RCL_DMI_CHASSIS_TYPE );
-    chassis_num = (guint) g_ascii_strtoull( dmi_chassis_type, NULL, 10 );
-    g_free( dmi_chassis_type );
+    gchar *chassis_val = read_key_value_file( RCL_MACHINE_INFO_FILE, "CHASSIS" );
+    gchar *icon_val    = read_key_value_file( RCL_MACHINE_INFO_FILE, "ICON_NAME" );
+    gboolean need_chassis = ( chassis_val == NULL || chassis_val[0] == '\0' );
+    gboolean need_icon    = ( icon_val    == NULL || icon_val[0]    == '\0' );
 
-    g_free( priv->chassis );
-    priv->chassis = g_strdup( rcl_chassis_type_to_string( chassis_num ) );
+    if( need_chassis || need_icon )
+    {
+      gchar *dmi_chassis_type = read_dmi( RCL_DMI_CHASSIS_TYPE );
+      chassis_num = (guint) g_ascii_strtoull( dmi_chassis_type, NULL, 10 );
+      g_free( dmi_chassis_type );
+    }
 
-    g_variant_builder_add( &changed_props, "{sv}", "Chassis",
-                           g_variant_new_string( priv->chassis ) );
-    any_changed = TRUE;
-  }
+    if( need_chassis )
+    {
+      g_free( chassis_val );
+      chassis_val = g_strdup( rcl_chassis_type_to_string( chassis_num ) );
+    }
+    if( need_icon )
+    {
+      g_free( icon_val );
+      icon_val = g_strdup( rcl_chassis_type_to_icon_name( chassis_num ) );
+    }
 
-  if( priv->icon_name == NULL || priv->icon_name[0] == '\0' )
-  {
-    g_free( priv->icon_name );
-    priv->icon_name = g_strdup( rcl_chassis_type_to_icon_name( chassis_num ) );
-
-    g_variant_builder_add( &changed_props, "{sv}", "IconName",
-                           g_variant_new_string( priv->icon_name ) );
-    any_changed = TRUE;
+    UPDATE_STR_PROP( chassis,   chassis_val, "Chassis" );
+    UPDATE_STR_PROP( icon_name, icon_val,    "IconName" );
   }
 
   /* ---- HostnameSource ---- */

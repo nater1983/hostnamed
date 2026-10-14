@@ -7,11 +7,8 @@ hostnamed_deps = [
   glib_dep,
   gio_dep,
   gio_unix,
+  polkit,
 ]
-
-if polkit_found
-  hostnamed_deps += polkit
-endif
 
 hostnamed_inc = [
   config_h_inc,
