@@ -1,5 +1,5 @@
 .\" Manpage for hostnamed
-.TH HOSTNAMED 8 "June 2026" "hostnamed" "System Administration"
+.TH HOSTNAMED 8 "October 2026" "hostnamed 0.3.0" "System Administration"
 .SH NAME
 hostnamed \- D-Bus hostname management daemon for non-systemd Linux systems
 .SH SYNOPSIS
@@ -55,7 +55,10 @@ methods described below, or by editing the underlying files directly
 .BR FILES ),
 which
 .B hostnamed
-picks up automatically.
+picks up through inotify. Property changes made by the daemon are
+announced with
+.B org.freedesktop.DBus.Properties.PropertiesChanged
+when the effective value changes.
 .TP
 .B Hostname \fR(s)
 The transient hostname, as returned by
@@ -75,16 +78,19 @@ Unlike
 this value is not used for name resolution and may contain spaces and
 mixed case. When
 .B SetPrettyHostname
-is called with a value that contains a dot \(em as happens when a
-desktop shell populates both the static and pretty hostname from the
-same text field \(em
-.B hostnamed
-keeps only the portion before the first dot, so the pretty name does
-not end up as a dotted hostname.
+receives a value that is itself a valid hostname, the daemon may reduce
+it to the first label. Free-form values that merely contain dots, such as
+.BR "Bob's PC v2.0" ,
+are preserved as supplied.
 .TP
 .B DefaultHostname \fR(s)
-The compiled-in or distribution default hostname, used when no static or
-transient hostname is configured.
+The distribution default hostname, read from
+.B DEFAULT_HOSTNAME
+in
+.IR /etc/os-release
+when available, or
+.B localhost
+otherwise.
 .TP
 .B HostnameSource \fR(s)
 One of
@@ -162,12 +168,13 @@ field from
 if present.
 .TP
 .B HardwareVendor \fR(s)
-The system board vendor, read from
-.IR /sys/class/dmi/id/board_vendor .
+The hardware vendor, selected from available DMI product and board vendor
+fields, with a device-tree compatible-string fallback on platforms without
+DMI.
 .TP
 .B HardwareModel \fR(s)
-The system product name, read from
-.IR /sys/class/dmi/id/product_name .
+The hardware model, selected from available DMI product and board name fields,
+with a device-tree model fallback on platforms without DMI.
 .TP
 .B FirmwareVersion \fR(s)
 The BIOS/firmware version string, read from
@@ -258,13 +265,16 @@ Requires
 .BR org.freedesktop.hostname1.set-machine-info .
 .TP
 .B GetProductUUID(b interactive) \(-> ay
-Returns the DMI product UUID, read from
-.IR /sys/class/dmi/id/product_uuid ,
-as a byte array.
+Returns the product UUID as 16 raw UUID bytes, read from
+.IR /sys/class/dmi/id/product_uuid .
+Unreadable, malformed, or placeholder UUID values are reported as
+.B org.freedesktop.DBus.Error.NotFound
+rather than as an empty byte array.
 .TP
 .B GetHardwareSerial(b interactive) \(-> s
-Returns the DMI chassis serial number, read from
-.IR /sys/class/dmi/id/chassis_serial .
+Returns the first usable serial number from the DMI product, board, or chassis
+serial fields. Placeholder values are skipped. On systems without a usable
+DMI serial, the device-tree serial-number property is used when available.
 .TP
 .B Describe() \(-> s
 Returns a single JSON object containing the current value of every
@@ -274,16 +284,19 @@ individual property gets. The bundled
 client uses this interface for changes; its status output currently reads
 the underlying files directly.
 .PP
-For every method that takes an
+For methods that take an
 .I interactive
 argument, a value of
 .B true
 indicates the caller is willing to wait for a PolKit authentication
-dialog to be presented by the user's session PolKit agent; a value of
-.B false
-indicates the call should fail immediately with
-.B org.freedesktop.DBus.Error.AuthFailed
-unless the caller is already authorized.
+dialog from the user's session PolKit agent. If authentication could
+succeed only through interaction but
+.B interactive
+is
+.BR false ,
+the daemon returns
+.B org.freedesktop.DBus.Error.InteractiveAuthorizationRequired .
+Denied requests and operation failures are returned as D-Bus errors.
 .SH AUTHORIZATION
 Access to the
 .B Set*
@@ -300,31 +313,23 @@ using the following actions, declared in
 .TQ
 .B org.freedesktop.hostname1.set-machine-info
 .PP
-By default these actions require
-.B auth_admin
-for inactive or remote callers and
-.B auth_admin_keep
-for an active local session, matching upstream
-.BR systemd-hostnamed (8)
-policy. A PolKit rule installed at
+The installed PolKit policy defines actions for hostname changes, machine-info
+changes, and hardware identity reads. The rules file
 .I /usr/share/polkit-1/rules.d/org.freedesktop.hostname1.rules
-additionally grants unconditional access to members of the privileged
-group selected at build time (default
+allows root for hostname1 actions and grants the configured privileged
+group (default
 .RB ` wheel ',
 see the
 .B privileged-group
-meson option), so desktop session tools are not prompted for a password
-on every edit. Group membership changes only take effect for new login
-sessions; a user added to the privileged group must log out and back in
-before
-.B hostnamed
-will recognize the new membership.
+Meson option) access to the hostname-setting and machine-info actions.
+Hardware UUID and serial reads have their own policy actions. Group
+membership changes generally take effect after the user's next login
+session.
 .PP
 These PolKit actions govern the bundled
 .BR hostnamectl (1)
-client's change requests as well as other D-Bus callers. The daemon
-performs the writes after authorization; the client does not write
-hostname configuration files directly.
+client's change requests as well as other D-Bus callers. The daemon performs the writes after authorization; the bundled client does
+not write hostname configuration files directly.
 .SH FILES
 .TP
 .I /etc/HOSTNAME
@@ -345,12 +350,8 @@ and
 .B LOCATION
 as shell-style
 .B KEY="value"
-assignments. Rewritten atomically (temporary file plus rename) on every
-write, by either
-.B hostnamed
-itself or
-.BR hostnamectl (1).
-Watched with
+assignments. Updated atomically by the daemon while preserving unrelated
+keys and comments. Watched with
 .BR inotify (7).
 .TP
 .I /etc/os-release
@@ -375,14 +376,16 @@ Not written by
 .TQ
 .I /sys/class/dmi/id/bios_date
 SMBIOS/DMI sysfs nodes read for hardware and firmware identification.
-Any node that does not exist or cannot be read is treated as empty.
+Missing, unreadable, empty, or known placeholder values are skipped where
+fallback fields are available. On device-tree systems, model, compatible,
+chassis-type, and serial-number data may be used as fallbacks.
 .TP
 .I /usr/share/polkit-1/actions/org.freedesktop.hostname1.policy
 PolKit action declarations and default authorization requirements.
 .TP
 .I /usr/share/polkit-1/rules.d/org.freedesktop.hostname1.rules
-PolKit rule granting the configured privileged group unconditional
-access to all three hostname1 actions.
+PolKit rules granting root access to hostname1 actions and the configured
+privileged group access to hostname-setting and machine-info actions.
 .SH "SEE ALSO"
 .BR hostnamectl (1),
 .BR machine-info (5),
