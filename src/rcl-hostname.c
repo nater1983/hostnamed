@@ -783,13 +783,25 @@ atomic_replace_file (const gchar *path, const gchar *contents, gsize length,
   struct stat st;
   gboolean existed;
   int fd;
-  if (g_stat (path, &st) == 0) {
+  /*
+   * Do not follow a symlink at a privileged configuration path. Replacing
+   * the symlink itself would be surprising, while following it could change
+   * a different file than the administrator configured.
+   */
+  if (g_lstat (path, &st) == 0) {
+    if (!S_ISREG (st.st_mode)) {
+      g_set_error (error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT,
+                   "Refusing to replace non-regular configuration file %s",
+                   path);
+      g_free (tmp_path);
+      return FALSE;
+    }
     existed = TRUE;
   } else if (errno == ENOENT) {
     existed = FALSE;
   } else {
     g_set_error (error, G_IO_ERROR, g_io_error_from_errno (errno),
-                 "stat(%s): %s", path, g_strerror (errno));
+                 "lstat(%s): %s", path, g_strerror (errno));
     g_free (tmp_path);
     return FALSE;
   }
@@ -808,7 +820,9 @@ atomic_replace_file (const gchar *path, const gchar *contents, gsize length,
                  "preserve ownership for %s: %s", path, g_strerror (errno));
     goto close_out;
   }
-  if (fchmod (fd, existed ? (st.st_mode & 07777) : 0644) != 0) {
+  /* Preserve ordinary rwx permissions, but never carry setuid/setgid
+   * or sticky bits onto a newly written configuration file. */
+  if (fchmod (fd, existed ? (st.st_mode & 0777) : 0644) != 0) {
     g_set_error (error, G_IO_ERROR, g_io_error_from_errno (errno),
                  "set permissions for %s: %s", path, g_strerror (errno));
     goto close_out;
