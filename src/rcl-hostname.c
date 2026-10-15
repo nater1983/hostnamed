@@ -792,6 +792,9 @@ write_machine_info_key( const gchar  *key,
     }
   }
 
+  if( !ok )
+    g_unlink( tmp_path );
+
   g_free( tmp_path );
   g_string_free( out, TRUE );
   return ok;
