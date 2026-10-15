@@ -1225,6 +1225,9 @@ do_set_static_hostname (RclHostnameDaemon *daemon, const gchar *name,
                                   strlen (content), &error);
     g_free (content);
     if (!written) {
+      /* A directory-fsync failure can occur after rename has taken effect.
+       * Refresh even on error so the D-Bus cache reflects the actual file. */
+      rcl_daemon_sync_dbus_properties (daemon);
       g_dbus_method_invocation_return_dbus_error (invocation,
         "org.freedesktop.DBus.Error.Failed",
         error ? error->message : "Failed to write static hostname");
@@ -1280,6 +1283,7 @@ do_set_static_hostname (RclHostnameDaemon *daemon, const gchar *name,
   } else {
     if (g_unlink (RCL_HOSTNAME_FILE) == 0) {
       if (!sync_parent_directory (RCL_HOSTNAME_FILE, &error)) {
+        rcl_daemon_sync_dbus_properties (daemon);
         g_dbus_method_invocation_return_dbus_error (invocation,
           "org.freedesktop.DBus.Error.Failed",
           error ? error->message : "Failed to sync static hostname directory");
@@ -1329,6 +1333,9 @@ do_set_machine_info( RclHostnameDaemon *daemon, const gchar *key,
 
   if( !write_machine_info_key( key, name, &error ) )
   {
+    /* Keep the exported cache truthful if rename succeeded but directory
+     * durability confirmation failed. */
+    rcl_daemon_sync_dbus_properties( daemon );
     g_dbus_method_invocation_return_dbus_error( invocation,
       "org.freedesktop.DBus.Error.Failed",
       error ? error->message : "Failed to write machine information" );
@@ -1486,6 +1493,7 @@ static void do_set_tags(RclHostnameDaemon *daemon, GVariant *parameters,
   for(guint i=0;i<tags->len;i++) { if(i) g_string_append_c(s,':'); g_string_append(s,g_ptr_array_index(tags,i)); }
   joined=g_string_free(s,FALSE);
   if(!write_machine_info_key("TAGS",joined,&error)) {
+    rcl_daemon_sync_dbus_properties(daemon);
     g_dbus_method_invocation_return_dbus_error(invocation,
       "org.freedesktop.DBus.Error.Failed",
       error ? error->message : "Failed to write machine tags");
