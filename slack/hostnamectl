@@ -48,8 +48,8 @@ dbus_get() {
     --method org.freedesktop.DBus.Properties.Get \
     org.freedesktop.hostname1 "$property" 2>/dev/null) \
     || die "cannot read hostname1 property '$property' from D-Bus"
-  result=${result#"(<'"}
-  result=${result%"'>,)"}
+  # GVariant's CLI printer includes optional spaces around the variant.
+  result=$(printf '%s\n' "$result" | sed -e "s/^(< *'//" -e "s/' *>[,]\{0,1\})$//")
   printf '%s' "$result"
 }
 
