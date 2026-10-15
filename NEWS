@@ -4,6 +4,10 @@ All notable changes to `hostnamed` are documented in this file, derived from the
 
 ## [0.3.0] - 2026-10-14
 
+### Changed (hostnamectl)
+- Routed hostname-setting and machine-info changes through the system D-Bus `org.freedesktop.hostname1` methods instead of direct writes by the shell client. The daemon now owns persistence and polkit authorization applies to `hostnamectl` requests.
+- `hostnamectl set-hostname` no longer automatically overwrites `PRETTY_HOSTNAME`; use `set-hostname --pretty` to change it explicitly.
+
 ### Changed (build / compatibility)
 - **polkit is now a hard build dependency.** The `-Dpolkit=disabled` / `polkit` feature option has been removed, along with the unused `HAVE_POLKIT` define and every `polkit_found` conditional in the meson files. Previously a build without polkit failed at `#include <polkit/polkit.h>` anyway, and without polkit nothing could authorise the Set* methods. Anyone passing `-Dpolkit=...` to `meson setup` must drop it.
 - Hostname validation (`SetHostname`, `SetStaticHostname`) is now strict RFC 1123: labels of 1-63 characters, no empty labels (`a..b`), no leading/trailing dot, and no label that starts or ends with `-`. Names that were previously accepted but are invalid under these rules are now rejected with `InvalidArgs`.
