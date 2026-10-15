@@ -1169,9 +1169,9 @@ do_set_hostname( RclHostnameDaemon *daemon, const gchar *name,
   /* An empty transient hostname explicitly clears the kernel hostname. */
   if( sethostname( name ? name : "", name ? strlen(name) : 0 ) != 0 )
   {
-    g_dbus_method_invocation_return_error( invocation,
-      G_IO_ERROR, g_io_error_from_errno(errno),
-      "sethostname failed: %s", g_strerror(errno) );
+    g_dbus_method_invocation_return_dbus_error( invocation,
+      "org.freedesktop.DBus.Error.Failed",
+      g_strdup_printf("sethostname failed: %s", g_strerror(errno)) );
     return;
   }
 
@@ -1263,9 +1263,13 @@ do_set_static_hostname (RclHostnameDaemon *daemon, const gchar *name,
 
       /* Reflect the actual on-disk state even if rollback itself failed. */
       rcl_daemon_sync_dbus_properties (daemon);
-      g_dbus_method_invocation_return_error (invocation, G_IO_ERROR,
-        g_io_error_from_errno (saved_errno),
-        "sethostname(%s) failed: %s", hostname, g_strerror (saved_errno));
+      {
+        gchar *message = g_strdup_printf ("sethostname(%s) failed: %s",
+                                          hostname, g_strerror (saved_errno));
+        g_dbus_method_invocation_return_dbus_error (invocation,
+          "org.freedesktop.DBus.Error.Failed", message);
+        g_free (message);
+      }
       return;
     }
 
@@ -1280,9 +1284,13 @@ do_set_static_hostname (RclHostnameDaemon *daemon, const gchar *name,
         return;
       }
     } else if (errno != ENOENT) {
-      g_dbus_method_invocation_return_error (invocation, G_IO_ERROR,
-        g_io_error_from_errno (errno), "Cannot remove static hostname file %s: %s",
-        RCL_HOSTNAME_FILE, g_strerror (errno));
+      {
+        gchar *message = g_strdup_printf ("Cannot remove static hostname file %s: %s",
+                                          RCL_HOSTNAME_FILE, g_strerror (errno));
+        g_dbus_method_invocation_return_dbus_error (invocation,
+          "org.freedesktop.DBus.Error.Failed", message);
+        g_free (message);
+      }
       return;
     }
   }
@@ -1381,8 +1389,8 @@ do_get_product_uuid( GDBusMethodInvocation *invocation )
   if( !parse_uuid_bytes( uuid_str, raw ) )
   {
     g_free( uuid_str );
-    g_dbus_method_invocation_return_error( invocation,
-      G_IO_ERROR, G_IO_ERROR_NOT_FOUND, "Product UUID is not available" );
+    g_dbus_method_invocation_return_dbus_error( invocation,
+      "org.freedesktop.DBus.Error.Failed", "Product UUID is not available" );
     return;
   }
   g_free( uuid_str );
