@@ -12,39 +12,26 @@ is a Bash client used to query and change the system's static, transient,
 and pretty hostnames, along with related machine metadata such as the
 icon name, chassis type, deployment environment, and location.
 .PP
-Unlike a typical D-Bus client,
-.B hostnamectl
-writes directly to
+Changes are sent to the system D-Bus service
+.BR hostnamed (8)
+through the
+.B org.freedesktop.hostname1
+interface. The daemon validates requests, authorizes privileged changes
+through PolKit, updates the running hostname where appropriate, and writes
+the persistent configuration files. The client does not write to
 .I /etc/HOSTNAME
 (or
-.I /etc/hostname
-if the former does not exist) and
-.IR /etc/machine-info .
-The
-.B hostnamed
-daemon watches these files with
-.BR inotify (7)
-and automatically updates its
-.B org.freedesktop.hostname1
-D-Bus properties and emits
-.B PropertiesChanged
-signals whenever they are modified, whether by
-.B hostnamectl
-or by any other tool. This means
-.B hostnamectl
-itself never talks to D-Bus or PolKit; it relies on ordinary file
-permissions, and most subcommands simply require root.
+.IR /etc/hostname )
+or
+.IR /etc/machine-info
+directly. A caller does not need to be root when PolKit authorizes the
+requested operation; authorization failures are reported by the D-Bus call.
 .PP
-On first run as root, if
-.I /etc/machine-info
-does not yet exist,
-.B hostnamectl
-creates it automatically, deriving an initial chassis and icon name from
-SMBIOS data under
-.I /sys/class/dmi/id
-and an initial pretty hostname from the static hostname file. An existing
-.I /etc/machine-info
-is never overwritten by this bootstrap step.
+The
+.B status
+command currently reads the configuration files and system information
+to format its human-readable output. Changes made through D-Bus are handled
+by the daemon and reflected in its D-Bus properties.
 .SH COMMANDS
 .TP
 .B status
