@@ -1,7 +1,8 @@
 polkit.addRule(
   function(action, subject) {
     /* Root is always authorized; the configured admin group is also trusted. */
-    if (subject.user == "root")
+    if (action.id.indexOf("org.freedesktop.hostname1.") == 0 &&
+        subject.user == "root")
       return polkit.Result.YES;
 
     if ((action.id == "org.freedesktop.hostname1.set-hostname" ||
