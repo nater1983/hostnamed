@@ -1180,27 +1180,77 @@ do_set_static_hostname (RclHostnameDaemon *daemon, const gchar *name,
   }
 
   if (hostname[0] != '\0') {
-    gchar *content = g_strdup_printf ("%s\n", hostname);
-    gboolean written = atomic_replace_file (RCL_HOSTNAME_FILE, content,
-                                            strlen (content), &error);
+    gchar *old_contents = NULL;
+    gsize old_length = 0;
+    gboolean old_exists = FALSE;
+    gchar *content;
+    gboolean written;
+
+    /*
+     * Snapshot the prior file so a kernel hostname failure does not leave
+     * the persistent hostname changed while the D-Bus call reports failure.
+     * Missing files are normal; other read failures must abort before write.
+     */
+    if (g_file_get_contents (RCL_HOSTNAME_FILE, &old_contents,
+                             &old_length, &error)) {
+      old_exists = TRUE;
+    } else if (g_error_matches (error, G_FILE_ERROR, G_FILE_ERROR_NOENT)) {
+      g_clear_error (&error);
+    } else {
+      g_dbus_method_invocation_return_dbus_error (invocation,
+        "org.freedesktop.DBus.Error.Failed",
+        error ? error->message : "Failed to read previous static hostname");
+      g_clear_error (&error);
+      return;
+    }
+
+    content = g_strdup_printf ("%s\n", hostname);
+    written = atomic_replace_file (RCL_HOSTNAME_FILE, content,
+                                  strlen (content), &error);
     g_free (content);
     if (!written) {
       g_dbus_method_invocation_return_dbus_error (invocation,
         "org.freedesktop.DBus.Error.Failed",
         error ? error->message : "Failed to write static hostname");
       g_clear_error (&error);
+      g_free (old_contents);
       return;
     }
 
-    /* The persistent value is now committed. If updating the kernel fails,
-     * return an error rather than claiming the operation fully succeeded. */
     if (sethostname (hostname, strlen (hostname)) != 0) {
+      int saved_errno = errno;
+      GError *rollback_error = NULL;
+      gboolean rolled_back;
+
+      if (old_exists) {
+        rolled_back = atomic_replace_file (RCL_HOSTNAME_FILE, old_contents,
+                                           old_length, &rollback_error);
+      } else {
+        rolled_back = g_unlink (RCL_HOSTNAME_FILE) == 0 || errno == ENOENT;
+        if (!rolled_back)
+          g_set_error (&rollback_error, G_IO_ERROR,
+                       g_io_error_from_errno (errno),
+                       "remove newly created %s: %s",
+                       RCL_HOSTNAME_FILE, g_strerror (errno));
+      }
+
+      if (!rolled_back) {
+        g_warning ("Could not roll back %s after sethostname failure: %s",
+                   RCL_HOSTNAME_FILE,
+                   rollback_error ? rollback_error->message : "unknown error");
+      }
+      g_clear_error (&rollback_error);
+      g_free (old_contents);
+
+      /* Reflect the actual on-disk state even if rollback itself failed. */
+      rcl_daemon_sync_dbus_properties (daemon);
       g_dbus_method_invocation_return_error (invocation, G_IO_ERROR,
-        g_io_error_from_errno (errno),
-        "sethostname(%s) failed after updating %s: %s",
-        hostname, RCL_HOSTNAME_FILE, g_strerror (errno));
+        g_io_error_from_errno (saved_errno),
+        "sethostname(%s) failed: %s", hostname, g_strerror (saved_errno));
       return;
     }
+
+    g_free (old_contents);
   } else {
     if (g_unlink (RCL_HOSTNAME_FILE) != 0 && errno != ENOENT) {
       g_dbus_method_invocation_return_error (invocation, G_IO_ERROR,
