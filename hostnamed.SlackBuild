@@ -6,7 +6,7 @@
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=hostnamed
-VERSION=${VERSION:-2026_master.3}
+VERSION=${VERSION:-0.3.0}
 BUILD=${BUILD:-1}
 TAG=${TAG:-_FRG}
 PKGTYPE=${PKGTYPE:-txz}
@@ -95,7 +95,7 @@ for i in $( find $PKG/usr/man -type l ) ; do
 done
 
 mkdir -p $PKG/usr/doc/$PRGNAM-$VERSION
-cp -a README.md AUTHORS BUG-NEWS NEWS COPYING $PKG/usr/doc/$PRGNAM-$VERSION 2>/dev/null || true
+cp -a README.md AUTHORS BUGS-NEWS NEWS COPYING $PKG/usr/doc/$PRGNAM-$VERSION
 cat $CWD/$PRGNAM.SlackBuild > $PKG/usr/doc/$PRGNAM-"$VERSION"/$PRGNAM.SlackBuild
 
 mkdir -p $PKG/install
