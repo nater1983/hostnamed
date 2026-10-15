@@ -209,6 +209,14 @@ rcl_main_name_lost(GDBusConnection *connection,
 
   g_warning("D-Bus name lost: %s", name);
 
+  /*
+   * The old bus connection may have been disconnected or replaced. Tear
+   * down its registered object before scheduling a reconnect so startup on
+   * the next connection cannot leak the old connection or retain a stale
+   * registration ID.
+   */
+  rcl_daemon_shutdown(state->daemon);
+
   if (state->exiting)
     return;
 
