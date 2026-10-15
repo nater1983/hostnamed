@@ -497,7 +497,14 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
   {
     gchar *raw_tags = read_key_value_file(RCL_MACHINE_INFO_FILE, "TAGS");
     gchar **new_tags = (raw_tags && raw_tags[0]) ? g_strsplit(raw_tags, ":", -1) : g_new0(gchar *, 1);
-    if(!priv->tags || !g_strv_equal((const gchar * const *)priv->tags, (const gchar * const *)new_tags)) {
+    gboolean tags_changed = priv->tags == NULL;
+    if(!tags_changed) {
+      gsize ti = 0;
+      while(priv->tags[ti] && new_tags[ti] &&
+            g_strcmp0(priv->tags[ti], new_tags[ti]) == 0) ti++;
+      tags_changed = (priv->tags[ti] != NULL || new_tags[ti] != NULL);
+    }
+    if(tags_changed) {
       g_strfreev(priv->tags); priv->tags = g_strdupv(new_tags);
       g_variant_builder_add(&changed_props, "{sv}", "Tags", g_variant_new_strv((const gchar * const *)priv->tags, -1));
       any_changed = TRUE;
