@@ -18,33 +18,33 @@
     <property name="Hostname" type="s" access="read"/>
     <property name="StaticHostname" type="s" access="read"/>
     <property name="PrettyHostname" type="s" access="read"/>
-    <property name="DefaultHostname" type="s" access="read"/>
+    <property name="DefaultHostname" type="s" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
     <property name="HostnameSource" type="s" access="read"/>
     <property name="IconName" type="s" access="read"/>
     <property name="Chassis" type="s" access="read"/>
     <property name="Deployment" type="s" access="read"/>
     <property name="Location" type="s" access="read"/>
     <property name="Tags" type="as" access="read"/>
-    <property name="KernelName" type="s" access="read"/>
-    <property name="KernelRelease" type="s" access="read"/>
-    <property name="KernelVersion" type="s" access="read"/>
-    <property name="OperatingSystemPrettyName" type="s" access="read"/>
-    <property name="OperatingSystemFancyName" type="s" access="read"/>
-    <property name="OperatingSystemCPEName" type="s" access="read"/>
-    <property name="OperatingSystemSupportEnd" type="t" access="read"/>
-    <property name="HomeURL" type="s" access="read"/>
-    <property name="OperatingSystemImageID" type="s" access="read"/>
-    <property name="OperatingSystemImageVersion" type="s" access="read"/>
-    <property name="HardwareVendor" type="s" access="read"/>
-    <property name="HardwareModel" type="s" access="read"/>
-    <property name="HardwareSKU" type="s" access="read"/>
-    <property name="HardwareVersion" type="s" access="read"/>
-    <property name="FirmwareVersion" type="s" access="read"/>
-    <property name="FirmwareVendor" type="s" access="read"/>
-    <property name="FirmwareDate" type="t" access="read"/>
-    <property name="MachineID" type="ay" access="read"/>
-    <property name="BootID" type="ay" access="read"/>
-    <property name="VSockCID" type="u" access="read"/>
-    <property name="ChassisAssetTag" type="s" access="read"/>
+    <property name="KernelName" type="s" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="KernelRelease" type="s" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="KernelVersion" type="s" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="OperatingSystemPrettyName" type="s" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="OperatingSystemFancyName" type="s" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="OperatingSystemCPEName" type="s" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="OperatingSystemSupportEnd" type="t" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="HomeURL" type="s" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="OperatingSystemImageID" type="s" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="OperatingSystemImageVersion" type="s" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="HardwareVendor" type="s" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="HardwareModel" type="s" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="HardwareSKU" type="s" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="HardwareVersion" type="s" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="FirmwareVersion" type="s" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="FirmwareVendor" type="s" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="FirmwareDate" type="t" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="MachineID" type="ay" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="BootID" type="ay" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="VSockCID" type="u" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
+    <property name="ChassisAssetTag" type="s" access="read"><annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/></property>
   </interface>
 </node>
