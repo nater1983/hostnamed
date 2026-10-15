@@ -1147,6 +1147,7 @@ auth_ctx_free( AuthCtx *ctx )
   if( !ctx )
     return;
   g_clear_object( &ctx->daemon );
+  g_clear_object( &ctx->invocation );
   g_free( ctx->name );
   g_free( ctx->key );
   g_clear_pointer( &ctx->parameters, g_variant_unref );
@@ -1520,11 +1521,13 @@ on_check_done( GObject *source, GAsyncResult *res, gpointer user_data )
 
   if( !result )
   {
-    /* Do not leak a GLib/polkit implementation error name onto the public
-       hostname1 API. Return a stable D-Bus failure and retain the detail. */
+    /* Keep implementation details in the daemon log; expose a stable,
+       non-sensitive error to unprivileged D-Bus clients. */
+    g_warning ("PolKit authorization check failed: %s",
+               error ? error->message : "unknown error");
     g_dbus_method_invocation_return_dbus_error( ctx->invocation,
       "org.freedesktop.DBus.Error.Failed",
-      error ? error->message : "Authorization service failed" );
+      "Authorization service failed" );
     g_clear_error( &error );
     auth_ctx_free( ctx );
     return;
@@ -1596,9 +1599,11 @@ check_polkit_async( AuthCtx *ctx, const gchar *action_id, gboolean interactive )
     priv->authority = polkit_authority_get_sync( NULL, &err );
     if( priv->authority == NULL )
     {
+      g_warning ("Could not acquire PolKit authority: %s",
+                 err ? err->message : "unknown error");
       g_dbus_method_invocation_return_dbus_error( ctx->invocation,
         "org.freedesktop.DBus.Error.Failed",
-        err ? err->message : "Unable to connect to the authorization service" );
+        "Authorization service unavailable" );
       g_clear_error( &err );
       auth_ctx_free( ctx );
       return;
@@ -1719,7 +1724,7 @@ handle_method_call( GDBusConnection       *connection,
 
     ctx = g_new0( AuthCtx, 1 );
     ctx->daemon     = g_object_ref( daemon );
-    ctx->invocation = invocation;
+    ctx->invocation = g_object_ref (invocation);
     ctx->name       = g_strdup( name );
 
     if( g_strcmp0(method_name, "SetHostname") == 0 )
@@ -1753,7 +1758,7 @@ handle_method_call( GDBusConnection       *connection,
 
       ctx = g_new0( AuthCtx, 1 );
       ctx->daemon     = g_object_ref( daemon );
-      ctx->invocation = invocation;
+      ctx->invocation = g_object_ref (invocation);
       ctx->op         = OP_SET_MACHINE_INFO;
       ctx->key        = g_strdup( key );
       ctx->name       = g_strdup( name );
@@ -1772,7 +1777,7 @@ handle_method_call( GDBusConnection       *connection,
   {
     ctx = g_new0(AuthCtx, 1);
     ctx->daemon = g_object_ref(daemon);
-    ctx->invocation = invocation;
+    ctx->invocation = g_object_ref (invocation);
     ctx->op = OP_GET_HARDWARE_SERIAL;
     check_polkit_async(ctx, RCL_HOSTNAME_POLKIT_GET_HARDWARE_SERIAL, FALSE);
     return;
@@ -1784,7 +1789,7 @@ handle_method_call( GDBusConnection       *connection,
 
     ctx = g_new0( AuthCtx, 1 );
     ctx->daemon     = g_object_ref( daemon );
-    ctx->invocation = invocation;
+    ctx->invocation = g_object_ref (invocation);
 
     if( g_strcmp0(method_name, "GetProductUUID") == 0 )
     {
@@ -1795,7 +1800,7 @@ handle_method_call( GDBusConnection       *connection,
   }
 
   if( g_strcmp0(method_name, "SetTags") == 0 || g_strcmp0(method_name, "AddAndRemoveTags") == 0 ) {
-    ctx=g_new0(AuthCtx,1); ctx->daemon=g_object_ref(daemon); ctx->invocation=invocation;
+    ctx=g_new0(AuthCtx,1); ctx->daemon=g_object_ref(daemon); ctx->invocation=g_object_ref(invocation);
     ctx->op = g_strcmp0(method_name,"SetTags")==0 ? OP_SET_TAGS : OP_ADD_REMOVE_TAGS;
     ctx->parameters=g_variant_ref(parameters);
     check_polkit_async(ctx,RCL_HOSTNAME_POLKIT_SET_MACHINE_INFO,FALSE); return;
