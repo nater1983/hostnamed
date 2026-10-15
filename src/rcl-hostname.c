@@ -62,12 +62,23 @@ static const gchar hostname1_introspection_xml[] =
   "    <property name='KernelRelease'               type='s' access='read'/>"
   "    <property name='KernelVersion'               type='s' access='read'/>"
   "    <property name='OperatingSystemPrettyName'   type='s' access='read'/>"
+  "    <property name='OperatingSystemFancyName'    type='s' access='read'/>"
   "    <property name='OperatingSystemCPEName'      type='s' access='read'/>"
-  "    <property name='HomeURL'                      type='s' access='read'/>"
+  "    <property name='OperatingSystemSupportEnd'   type='t' access='read'/>"
+  "    <property name='HomeURL'                     type='s' access='read'/>"
+  "    <property name='OperatingSystemImageID'      type='s' access='read'/>"
+  "    <property name='OperatingSystemImageVersion' type='s' access='read'/>"
   "    <property name='HardwareVendor'              type='s' access='read'/>"
   "    <property name='HardwareModel'               type='s' access='read'/>"
+  "    <property name='HardwareSKU'                 type='s' access='read'/>"
+  "    <property name='HardwareVersion'             type='s' access='read'/>"
   "    <property name='FirmwareVersion'             type='s' access='read'/>"
+  "    <property name='FirmwareVendor'              type='s' access='read'/>"
   "    <property name='FirmwareDate'                type='t' access='read'/>"
+  "    <property name='MachineID'                   type='ay' access='read'/>"
+  "    <property name='BootID'                      type='ay' access='read'/>"
+  "    <property name='VSockCID'                    type='u' access='read'/>"
+  "    <property name='ChassisAssetTag'             type='s' access='read'/>"
   /* ---- methods ---- */
   "    <method name='SetHostname'>"
   "      <arg name='name'        type='s' direction='in'/>"
@@ -151,12 +162,23 @@ struct _RclHostnameDaemonPrivate
   gchar *kernel_release;
   gchar *kernel_version;
   gchar *os_pretty_name;
+  gchar *os_fancy_name;
   gchar *os_cpe_name;
+  guint64 os_support_end;
   gchar *os_home_url;
+  gchar *os_image_id;
+  gchar *os_image_version;
   gchar *hw_vendor;
   gchar *hw_model;
-  gchar   *firmware_version;
-  guint64  firmware_date_usec;   /* µs since Unix epoch; G_MAXUINT64 = unknown */
+  gchar *hw_sku;
+  gchar *hw_version;
+  gchar *firmware_version;
+  gchar *firmware_vendor;
+  gchar *chassis_asset_tag;
+  GVariant *machine_id;
+  GVariant *boot_id;
+  guint32 vsock_cid;
+  guint64 firmware_date_usec;   /* µs since Unix epoch; G_MAXUINT64 = unknown */
 };
 
 /* --------------------------------------------------------------------------
@@ -595,13 +617,91 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
                    read_key_value_file( RCL_OS_RELEASE_FILE, "PRETTY_NAME" ),
                    "OperatingSystemPrettyName" );
 
+  UPDATE_STR_PROP( os_fancy_name,
+                   read_key_value_file( RCL_OS_RELEASE_FILE, "NAME" ),
+                   "OperatingSystemFancyName" );
+
   UPDATE_STR_PROP( os_cpe_name,
                    read_key_value_file( RCL_OS_RELEASE_FILE, "CPE_NAME" ),
                    "OperatingSystemCPEName" );
 
   UPDATE_STR_PROP( os_home_url,
                    read_key_value_file( RCL_OS_RELEASE_FILE, "HOME_URL" ),
-                   "OperatingSystemHomeURL" );
+                   "HomeURL" );
+
+  UPDATE_STR_PROP( os_image_id,
+                   read_key_value_file( RCL_OS_RELEASE_FILE, "IMAGE_ID" ),
+                   "OperatingSystemImageID" );
+
+  UPDATE_STR_PROP( os_image_version,
+                   read_key_value_file( RCL_OS_RELEASE_FILE, "IMAGE_VERSION" ),
+                   "OperatingSystemImageVersion" );
+
+  {
+    gchar *sku=read_dmi("/sys/class/dmi/id/product_sku");
+    gchar *version=read_dmi("/sys/class/dmi/id/product_version");
+    gchar *bios_vendor=read_dmi("/sys/class/dmi/id/bios_vendor");
+    gchar *chassis_vendor=read_dmi(RCL_DMI_CHASSIS_VENDOR);
+    gchar *asset_tag=read_dmi("/sys/class/dmi/id/chassis_asset_tag");
+    UPDATE_STR_PROP(hw_sku, sku, "HardwareSKU");
+    UPDATE_STR_PROP(hw_version, version, "HardwareVersion");
+    UPDATE_STR_PROP(firmware_vendor, first_usable_dup(bios_vendor, chassis_vendor, ""), "FirmwareVendor");
+    UPDATE_STR_PROP(chassis_asset_tag, asset_tag, "ChassisAssetTag");
+    g_free(bios_vendor); g_free(chassis_vendor);
+  }
+
+  {
+    gchar *support_end=read_key_value_file(RCL_OS_RELEASE_FILE,"SUPPORT_END");
+    guint64 usec=G_MAXUINT64;
+    if(support_end && support_end[0]) {
+      struct tm tm={0}; int y=0,m=0,d=0;
+      if(sscanf(support_end,"%4d-%2d-%2d",&y,&m,&d)==3 && m>=1 && m<=12 && d>=1 && d<=31) {
+        tm.tm_year=y-1900; tm.tm_mon=m-1; tm.tm_mday=d;
+        time_t t=timegm(&tm);
+        if(t!=(time_t)-1) usec=(guint64)t*G_USEC_PER_SEC;
+      }
+    }
+    g_free(support_end);
+    if(priv->os_support_end!=usec) {
+      priv->os_support_end=usec;
+      g_variant_builder_add(&changed_props,"{sv}","OperatingSystemSupportEnd",g_variant_new_uint64(usec));
+      any_changed=TRUE;
+    }
+  }
+
+  {
+    const gchar *paths[]={"/etc/machine-id","/proc/sys/kernel/random/boot_id"};
+    GVariant **slots[]={&priv->machine_id,&priv->boot_id};
+    const gchar *names[]={"MachineID","BootID"};
+    for(guint bi=0;bi<2;bi++) {
+      gchar *id=read_first_line(paths[bi]);
+      guchar bytes[16]={0}; guint k=0;
+      if(id) for(const gchar *p=id;*p && k<16;) {
+        if(*p=='-') {p++;continue;}
+        gint hi=g_ascii_xdigit_value(*p++);
+        if(hi<0 || !*p) break;
+        gint lo=g_ascii_xdigit_value(*p++);
+        if(lo<0) break;
+        bytes[k++]=(guchar)((hi<<4)|lo);
+      }
+      GVariant *nv=g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE,bytes,16,sizeof(guchar));
+      if(!*slots[bi] || !g_variant_equal(*slots[bi],nv)) {
+        g_clear_pointer(slots[bi],g_variant_unref);
+        *slots[bi]=g_variant_ref_sink(nv);
+        g_variant_builder_add(&changed_props,"{sv}",names[bi],g_variant_ref(*slots[bi]));
+        any_changed=TRUE;
+      }
+      g_free(id);
+    }
+  }
+
+  {
+    guint32 cid=G_MAXUINT32;
+    gchar *cidstr=read_first_line("/sys/class/misc/vsock/dev");
+    if(cidstr) { gchar *end=NULL; guint64 v=g_ascii_strtoull(cidstr,&end,10); if(end && *end=='\\0' && v<=G_MAXUINT32) cid=(guint32)v; }
+    g_free(cidstr);
+    if(priv->vsock_cid!=cid) { priv->vsock_cid=cid; g_variant_builder_add(&changed_props,"{sv}","VSockCID",g_variant_new_uint32(cid)); any_changed=TRUE; }
+  }
 
   /* ---- DMI hardware info ---- */
   /* Vendor: DMI system vendor, board vendor, then the device-tree
@@ -1440,11 +1540,22 @@ handle_get_property( GDBusConnection  *connection,
   if( g_strcmp0(property_name, "KernelRelease"             ) == 0 ) RETURN_STR(kernel_release);
   if( g_strcmp0(property_name, "KernelVersion"             ) == 0 ) RETURN_STR(kernel_version);
   if( g_strcmp0(property_name, "OperatingSystemPrettyName" ) == 0 ) RETURN_STR(os_pretty_name);
+  if( g_strcmp0(property_name, "OperatingSystemFancyName"  ) == 0 ) RETURN_STR(os_fancy_name);
   if( g_strcmp0(property_name, "OperatingSystemCPEName"    ) == 0 ) RETURN_STR(os_cpe_name);
-  if( g_strcmp0(property_name, "HomeURL" ) == 0 ) RETURN_STR(os_home_url);
+  if( g_strcmp0(property_name, "OperatingSystemSupportEnd" ) == 0 ) return g_variant_new_uint64(priv->os_support_end);
+  if( g_strcmp0(property_name, "HomeURL"                   ) == 0 ) RETURN_STR(os_home_url);
+  if( g_strcmp0(property_name, "OperatingSystemImageID"    ) == 0 ) RETURN_STR(os_image_id);
+  if( g_strcmp0(property_name, "OperatingSystemImageVersion") == 0 ) RETURN_STR(os_image_version);
   if( g_strcmp0(property_name, "HardwareVendor"            ) == 0 ) RETURN_STR(hw_vendor);
   if( g_strcmp0(property_name, "HardwareModel"             ) == 0 ) RETURN_STR(hw_model);
+  if( g_strcmp0(property_name, "HardwareSKU"               ) == 0 ) RETURN_STR(hw_sku);
+  if( g_strcmp0(property_name, "HardwareVersion"           ) == 0 ) RETURN_STR(hw_version);
   if( g_strcmp0(property_name, "FirmwareVersion"           ) == 0 ) RETURN_STR(firmware_version);
+  if( g_strcmp0(property_name, "FirmwareVendor"            ) == 0 ) RETURN_STR(firmware_vendor);
+  if( g_strcmp0(property_name, "ChassisAssetTag"            ) == 0 ) RETURN_STR(chassis_asset_tag);
+  if( g_strcmp0(property_name, "MachineID") == 0 ) return priv->machine_id ? g_variant_ref(priv->machine_id) : g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE,NULL,0,1);
+  if( g_strcmp0(property_name, "BootID") == 0 ) return priv->boot_id ? g_variant_ref(priv->boot_id) : g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE,NULL,0,1);
+  if( g_strcmp0(property_name, "VSockCID") == 0 ) return g_variant_new_uint32(priv->vsock_cid);
   if( g_strcmp0(property_name, "FirmwareDate"              ) == 0 )
     return g_variant_new_uint64 (priv->firmware_date_usec);
 
@@ -1619,17 +1730,29 @@ handle_method_call( GDBusConnection       *connection,
     ADD_STR( "KernelRelease",             priv->kernel_release );
     ADD_STR( "KernelVersion",             priv->kernel_version );
     ADD_STR( "OperatingSystemPrettyName", priv->os_pretty_name );
+    ADD_STR( "OperatingSystemFancyName",  priv->os_fancy_name );
     ADD_STR( "OperatingSystemCPEName",    priv->os_cpe_name );
-    ADD_STR( "HomeURL",                  priv->os_home_url );
+    ADD_STR( "HomeURL",                   priv->os_home_url );
+    ADD_STR( "OperatingSystemImageID",    priv->os_image_id );
+    ADD_STR( "OperatingSystemImageVersion", priv->os_image_version );
     ADD_STR( "HardwareVendor",            priv->hw_vendor );
     ADD_STR( "HardwareModel",             priv->hw_model );
+    ADD_STR( "HardwareSKU",               priv->hw_sku );
+    ADD_STR( "HardwareVersion",           priv->hw_version );
     ADD_STR( "FirmwareVersion",           priv->firmware_version );
+    ADD_STR( "FirmwareVendor",             priv->firmware_vendor );
+    ADD_STR( "ChassisAssetTag",            priv->chassis_asset_tag );
 
 #undef ADD_STR
 
-    /* FirmwareDate is numeric (type 't') and closes the object. */
-    g_string_append_printf( js, "\"FirmwareDate\":%" G_GUINT64_FORMAT "}",
-                            priv->firmware_date_usec );
+    /* Numeric and byte-array properties finish the JSON object. */
+    g_string_append_printf(js, "\"OperatingSystemSupportEnd\":%" G_GUINT64_FORMAT ",", priv->os_support_end);
+    g_string_append(js, "\"MachineID\":[");
+    if(priv->machine_id) { gsize n=0; const guint8 *p=g_variant_get_fixed_array(priv->machine_id,&n,1); for(gsize i=0;i<n;i++) { if(i) g_string_append_c(js,','); g_string_append_printf(js,"%u",p[i]); } }
+    g_string_append(js, "],\"BootID\":[");
+    if(priv->boot_id) { gsize n=0; const guint8 *p=g_variant_get_fixed_array(priv->boot_id,&n,1); for(gsize i=0;i<n;i++) { if(i) g_string_append_c(js,','); g_string_append_printf(js,"%u",p[i]); } }
+    g_string_append_printf(js, "],\"VSockCID\":%u,\"FirmwareDate\":%" G_GUINT64_FORMAT "}",
+                           priv->vsock_cid, priv->firmware_date_usec);
 
     g_dbus_method_invocation_return_value( invocation,
       g_variant_new("(s)", js->str) );
