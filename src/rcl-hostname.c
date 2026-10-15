@@ -1018,8 +1018,8 @@ do_set_hostname( RclHostnameDaemon *daemon, const gchar *name,
 {
   if( name && name[0] != '\0' && !rcl_hostname_is_valid( name ) )
   {
-    g_dbus_method_invocation_return_error( invocation,
-      G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Invalid hostname '%s'", name );
+    g_dbus_method_invocation_return_dbus_error( invocation,
+      "org.freedesktop.DBus.Error.InvalidArgs", "Invalid hostname" );
     return;
   }
 
@@ -1047,9 +1047,8 @@ do_set_static_hostname( RclHostnameDaemon *daemon, const gchar *name,
 
     if( !rcl_hostname_is_valid( name ) )
     {
-      g_dbus_method_invocation_return_error( invocation,
-        G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
-        "Invalid static hostname '%s'", name );
+      g_dbus_method_invocation_return_dbus_error( invocation,
+        "org.freedesktop.DBus.Error.InvalidArgs", "Invalid static hostname" );
       return;
     }
 
@@ -1057,8 +1056,10 @@ do_set_static_hostname( RclHostnameDaemon *daemon, const gchar *name,
     if( !g_file_set_contents( RCL_HOSTNAME_FILE, content, -1, &error ) )
     {
       g_free( content );
-      g_dbus_method_invocation_return_gerror( invocation, error );
-      g_error_free( error );
+      g_dbus_method_invocation_return_dbus_error( invocation,
+        "org.freedesktop.DBus.Error.Failed",
+        error ? error->message : "Failed to write static hostname" );
+      g_clear_error( &error );
       return;
     }
     g_free( content );
@@ -1116,17 +1117,19 @@ do_set_machine_info( RclHostnameDaemon *daemon, const gchar *key,
 
   if( !rcl_machine_info_value_is_safe( name ) )
   {
-    g_dbus_method_invocation_return_error( invocation,
-      G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
-      "Invalid value for %s: control characters and quotes are not allowed", key );
+    g_dbus_method_invocation_return_dbus_error( invocation,
+      "org.freedesktop.DBus.Error.InvalidArgs",
+      "Invalid machine-info value: control characters and quotes are not allowed" );
     g_free( sanitised );
     return;
   }
 
   if( !write_machine_info_key( key, name, &error ) )
   {
-    g_dbus_method_invocation_return_gerror( invocation, error );
-    g_error_free( error );
+    g_dbus_method_invocation_return_dbus_error( invocation,
+      "org.freedesktop.DBus.Error.Failed",
+      error ? error->message : "Failed to write machine information" );
+    g_clear_error( &error );
     g_free( sanitised );
     return;
   }
@@ -1281,7 +1284,10 @@ static void do_set_tags(RclHostnameDaemon *daemon, GVariant *parameters,
   for(guint i=0;i<tags->len;i++) { if(i) g_string_append_c(s,':'); g_string_append(s,g_ptr_array_index(tags,i)); }
   joined=g_string_free(s,FALSE);
   if(!write_machine_info_key("TAGS",joined,&error)) {
-    g_dbus_method_invocation_return_gerror(invocation,error); g_clear_error(&error); goto out;
+    g_dbus_method_invocation_return_dbus_error(invocation,
+      "org.freedesktop.DBus.Error.Failed",
+      error ? error->message : "Failed to write machine tags");
+    g_clear_error(&error); goto out;
   }
   rcl_daemon_sync_dbus_properties(daemon);
   g_dbus_method_invocation_return_value(invocation,NULL);
