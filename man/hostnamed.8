@@ -269,9 +269,10 @@ Returns the DMI chassis serial number, read from
 .B Describe() \(-> s
 Returns a single JSON object containing the current value of every
 property listed above, for clients that prefer one bulk read over
-individual property gets. Not used by the bundled
+individual property gets. The bundled
 .BR hostnamectl (1)
-client, which reads the underlying files directly instead.
+client uses this interface for changes; its status output currently reads
+the underlying files directly.
 .PP
 For every method that takes an
 .I interactive
@@ -319,13 +320,11 @@ before
 .B hostnamed
 will recognize the new membership.
 .PP
-These PolKit actions govern D-Bus callers only. The bundled
+These PolKit actions govern the bundled
 .BR hostnamectl (1)
-client bypasses D-Bus entirely and writes the underlying files
-directly, so its own authorization is the ordinary Unix file
-permissions on those files (in practice, it requires root for every
-subcommand except
-.BR status ).
+client's change requests as well as other D-Bus callers. The daemon
+performs the writes after authorization; the client does not write
+hostname configuration files directly.
 .SH FILES
 .TP
 .I /etc/HOSTNAME
