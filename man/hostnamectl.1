@@ -1,5 +1,5 @@
 .\" Manpage for hostnamectl (hostnamed bash client)
-.TH HOSTNAMECTL 1 "June 2026" "hostnamed" "User Commands"
+.TH HOSTNAMECTL 1 "October 2026" "hostnamed 0.3.0" "User Commands"
 .SH NAME
 hostnamectl \- control the system hostname and related machine metadata
 .SH SYNOPSIS
@@ -43,29 +43,27 @@ if empty or undetectable. The transient hostname is only shown when it
 differs from the static hostname.
 .TP
 .BI set-hostname " [--static|--transient|--pretty] NAME"
-Set the system hostname. With no mode flag, all three forms are updated
-at once: the static hostname file and the transient hostname (via the
-.BR hostname (1)
-command) are both set to
-.IR NAME ,
-and the pretty hostname is set to
-.I NAME
-with any domain suffix stripped (the portion before the first dot).
+Set the system hostname. With no mode flag, the static hostname is updated through
+.BR hostnamed (8),
+which also updates the running kernel hostname. The pretty hostname is
+not changed implicitly. Static and transient hostnames are validated as
+RFC 1123 hostnames, including label-length and hyphen-placement rules.
 .RS
 .TP
 .B --static
-Update only the static hostname file.
+Update the persistent static hostname through the daemon. The daemon also
+updates the running hostname to match.
 .TP
 .B --transient
-Update only the running kernel's hostname via
-.BR hostname (1),
-without touching any file.
+Update only the running kernel's transient hostname through D-Bus,
+without changing the static hostname file.
 .TP
 .B --pretty
 Update only the pretty hostname in
 .IR /etc/machine-info .
-Unlike the other modes, the value is not validated as a DNS-style
-hostname, since pretty names are free-form and may contain spaces.
+Pretty names are free-form and may contain spaces. A valid hostname
+containing a domain suffix may be reduced to its first label; arbitrary
+free-form dotted names are preserved.
 .RE
 .TP
 .BI set-icon-name " NAME"
@@ -150,13 +148,17 @@ Returns 0 on success and 1 on error (for example, an invalid hostname,
 an invalid chassis type, a missing argument, or insufficient
 permissions).
 .SH AUTHORIZATION
-All subcommands other than
-.B status
-require root. There is no PolKit prompt or D-Bus round trip in
-.B hostnamectl
-itself; the daemon's PolKit policy governs only direct D-Bus callers
-such as
-.BR gnome-control-center (1).
+Change commands call the system D-Bus service
+.B org.freedesktop.hostname1
+and are authorized by the daemon's PolKit policy. Root and members of the
+configured privileged group (by default
+.BR wheel )
+may be authorized without an authentication prompt, depending on the
+installed PolKit rules. Other callers may be prompted or denied according
+to policy. The
+.B interactive
+argument is enabled by this client so an authentication agent can be used
+when policy requires it.
 .SH FILES
 .TP
 .I /etc/HOSTNAME
@@ -173,8 +175,8 @@ does not exist.
 Stores the pretty hostname, icon name, chassis, deployment, and location
 as shell-style
 .B KEY="value"
-assignments. Rewritten atomically (temporary file plus rename) on every
-write. Created automatically on first root invocation if missing.
+assignments. The daemon updates this file atomically and preserves unrelated
+keys and comments.
 .TP
 .I /etc/os-release
 Read for the operating system's pretty name and CPE name when displaying
@@ -198,7 +200,7 @@ firmware date fields shown in
 .BR machine-info (5),
 .BR os-release (5),
 .BR hostname (1),
-.BR inotify (7)
+ .BR inotify (7)
 .SH AUTHOR
 Written by Nathaniel Russell.
 .PP
