@@ -57,12 +57,13 @@ static const gchar hostname1_introspection_xml[] =
   "    <property name='Chassis'                     type='s' access='read'/>"
   "    <property name='Deployment'                  type='s' access='read'/>"
   "    <property name='Location'                    type='s' access='read'/>"
+  "    <property name='Tags'                         type='as' access='read'/>"
   "    <property name='KernelName'                  type='s' access='read'/>"
   "    <property name='KernelRelease'               type='s' access='read'/>"
   "    <property name='KernelVersion'               type='s' access='read'/>"
   "    <property name='OperatingSystemPrettyName'   type='s' access='read'/>"
   "    <property name='OperatingSystemCPEName'      type='s' access='read'/>"
-  "    <property name='OperatingSystemHomeURL'      type='s' access='read'/>"
+  "    <property name='HomeURL'                      type='s' access='read'/>"
   "    <property name='HardwareVendor'              type='s' access='read'/>"
   "    <property name='HardwareModel'               type='s' access='read'/>"
   "    <property name='FirmwareVersion'             type='s' access='read'/>"
@@ -101,8 +102,18 @@ static const gchar hostname1_introspection_xml[] =
   "      <arg name='uuid'        type='ay' direction='out'/>"
   "    </method>"
   "    <method name='GetHardwareSerial'>"
-  "      <arg name='interactive' type='b' direction='in'/>"
   "      <arg name='serial'      type='s' direction='out'/>"
+  "    </method>"
+  "    <method name='SetTags'>"
+  "      <arg name='tags' type='as' direction='in'/>"
+  "    </method>"
+  "    <method name='AddAndRemoveTags'>"
+  "      <arg name='add' type='as' direction='in'/>"
+  "      <arg name='remove' type='as' direction='in'/>"
+  "    </method>"
+  "    <method name='GetMachineInfo'>"
+  "      <arg name='field' type='s' direction='in'/>"
+  "      <arg name='value' type='s' direction='out'/>"
   "    </method>"
   "    <method name='Describe'>"
   "      <arg name='json' type='s' direction='out'/>"
@@ -135,6 +146,7 @@ struct _RclHostnameDaemonPrivate
   gchar *chassis;
   gchar *deployment;
   gchar *location;
+  gchar **tags;
   gchar *kernel_name;
   gchar *kernel_release;
   gchar *kernel_version;
@@ -481,6 +493,17 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
   UPDATE_STR_PROP( location,
                    read_key_value_file( RCL_MACHINE_INFO_FILE, "LOCATION" ),
                    "Location" );
+
+  {
+    gchar *raw_tags = read_key_value_file(RCL_MACHINE_INFO_FILE, "TAGS");
+    gchar **new_tags = (raw_tags && raw_tags[0]) ? g_strsplit(raw_tags, ":", -1) : g_new0(gchar *, 1);
+    if(!priv->tags || !g_strv_equal((const gchar * const *)priv->tags, (const gchar * const *)new_tags)) {
+      g_strfreev(priv->tags); priv->tags = g_strdupv(new_tags);
+      g_variant_builder_add(&changed_props, "{sv}", "Tags", g_variant_new_strv((const gchar * const *)priv->tags, -1));
+      any_changed = TRUE;
+    }
+    g_strfreev(new_tags); g_free(raw_tags);
+  }
 
   /* ---- chassis / icon ----
      Chassis: machine-info, then DMI chassis type, then the device-tree
@@ -952,6 +975,8 @@ typedef enum
   OP_SET_HOSTNAME,
   OP_SET_STATIC_HOSTNAME,
   OP_SET_MACHINE_INFO,
+  OP_SET_TAGS,
+  OP_ADD_REMOVE_TAGS,
   OP_GET_PRODUCT_UUID,
   OP_GET_HARDWARE_SERIAL,
 } HostnameOp;
@@ -963,6 +988,7 @@ typedef struct
   HostnameOp             op;
   gchar                 *name;         /* owned; SET_* operand (may be NULL) */
   gchar                 *key;          /* owned; machine-info key (SET_MACHINE_INFO) */
+  GVariant              *parameters;
 } AuthCtx;
 
 static void
@@ -973,6 +999,7 @@ auth_ctx_free( AuthCtx *ctx )
   g_clear_object( &ctx->daemon );
   g_free( ctx->name );
   g_free( ctx->key );
+  g_clear_pointer( &ctx->parameters, g_variant_unref );
   g_free( ctx );
 }
 
@@ -1181,6 +1208,69 @@ do_get_hardware_serial( GDBusMethodInvocation *invocation )
   g_free( serial );
 }
 
+/* Machine tags use the machine-info TAGS field as a colon-separated list. */
+static gboolean machine_tag_valid(const gchar *tag)
+{
+  gsize n = tag ? strlen(tag) : 0;
+  if(n == 0 || n > 255) return FALSE;
+  for(const gchar *p=tag; *p; p++)
+    if(!(g_ascii_isalnum(*p) || *p == '-' || *p == '.')) return FALSE;
+  return TRUE;
+}
+
+static void do_set_tags(RclHostnameDaemon *daemon, GVariant *parameters,
+                        gboolean add_remove, GDBusMethodInvocation *invocation)
+{
+  GVariant *addv=NULL, *removev=NULL;
+  GVariantIter iter;
+  const gchar *tag;
+  GPtrArray *tags=g_ptr_array_new_with_free_func(g_free);
+  gchar *existing=NULL, *joined=NULL;
+  GError *error=NULL;
+
+  if(add_remove) g_variant_get(parameters,"(@as@as)",&addv,&removev);
+  else g_variant_get(parameters,"(@as)",&addv);
+
+  if(add_remove) {
+    existing=read_key_value_file(RCL_MACHINE_INFO_FILE,"TAGS");
+    if(existing && *existing) {
+      gchar **old=g_strsplit(existing,":",-1);
+      for(gsize i=0;old[i];i++) if(machine_tag_valid(old[i])) g_ptr_array_add(tags,g_strdup(old[i]));
+      g_strfreev(old);
+    }
+    g_variant_iter_init(&iter,removev);
+    while(g_variant_iter_next(&iter,"&s",&tag)) {
+      if(!machine_tag_valid(tag)) { g_dbus_method_invocation_return_error(invocation,G_DBUS_ERROR,G_DBUS_ERROR_INVALID_ARGS,"Invalid machine tag"); goto out; }
+      for(guint i=0;i<tags->len;) {
+        if(g_strcmp0(g_ptr_array_index(tags,i),tag)==0) g_ptr_array_remove_index(tags,i);
+        else i++;
+      }
+    }
+  }
+  g_variant_iter_init(&iter,addv);
+  while(g_variant_iter_next(&iter,"&s",&tag)) {
+    if(!machine_tag_valid(tag)) { g_dbus_method_invocation_return_error(invocation,G_DBUS_ERROR,G_DBUS_ERROR_INVALID_ARGS,"Invalid machine tag"); goto out; }
+    gboolean found=FALSE;
+    for(guint i=0;i<tags->len;i++) if(g_strcmp0(g_ptr_array_index(tags,i),tag)==0) {found=TRUE;break;}
+    if(!found) g_ptr_array_add(tags,g_strdup(tag));
+  }
+  for(guint i=0;i<tags->len;i++) for(guint j=i+1;j<tags->len;j++)
+    if(g_strcmp0(g_ptr_array_index(tags,i),g_ptr_array_index(tags,j))>0) {
+      gpointer tmp=g_ptr_array_index(tags,i); g_ptr_array_index(tags,i)=g_ptr_array_index(tags,j); g_ptr_array_index(tags,j)=tmp;
+    }
+  GString *s=g_string_new(NULL);
+  for(guint i=0;i<tags->len;i++) { if(i) g_string_append_c(s,':'); g_string_append(s,g_ptr_array_index(tags,i)); }
+  joined=g_string_free(s,FALSE);
+  if(!write_machine_info_key("TAGS",joined,&error)) {
+    g_dbus_method_invocation_return_gerror(invocation,error); g_clear_error(&error); goto out;
+  }
+  rcl_daemon_sync_dbus_properties(daemon);
+  g_dbus_method_invocation_return_value(invocation,NULL);
+out:
+  g_free(existing); g_free(joined); g_ptr_array_unref(tags);
+  g_clear_pointer(&addv,g_variant_unref); g_clear_pointer(&removev,g_variant_unref);
+}
+
 /* ---- async authorisation callback ---- */
 
 static void
@@ -1231,6 +1321,12 @@ on_check_done( GObject *source, GAsyncResult *res, gpointer user_data )
       break;
     case OP_SET_MACHINE_INFO:
       do_set_machine_info( ctx->daemon, ctx->key, ctx->name, ctx->invocation );
+      break;
+    case OP_SET_TAGS:
+      do_set_tags( ctx->daemon, ctx->parameters, FALSE, ctx->invocation );
+      break;
+    case OP_ADD_REMOVE_TAGS:
+      do_set_tags( ctx->daemon, ctx->parameters, TRUE, ctx->invocation );
       break;
     case OP_GET_PRODUCT_UUID:
       do_get_product_uuid( ctx->invocation );
@@ -1308,12 +1404,13 @@ handle_get_property( GDBusConnection  *connection,
   if( g_strcmp0(property_name, "Chassis"                   ) == 0 ) RETURN_STR(chassis);
   if( g_strcmp0(property_name, "Deployment"                ) == 0 ) RETURN_STR(deployment);
   if( g_strcmp0(property_name, "Location"                  ) == 0 ) RETURN_STR(location);
+  if( g_strcmp0(property_name, "Tags") == 0 ) return g_variant_new_strv((const gchar * const *)priv->tags, -1);
   if( g_strcmp0(property_name, "KernelName"                ) == 0 ) RETURN_STR(kernel_name);
   if( g_strcmp0(property_name, "KernelRelease"             ) == 0 ) RETURN_STR(kernel_release);
   if( g_strcmp0(property_name, "KernelVersion"             ) == 0 ) RETURN_STR(kernel_version);
   if( g_strcmp0(property_name, "OperatingSystemPrettyName" ) == 0 ) RETURN_STR(os_pretty_name);
   if( g_strcmp0(property_name, "OperatingSystemCPEName"    ) == 0 ) RETURN_STR(os_cpe_name);
-  if( g_strcmp0(property_name, "OperatingSystemHomeURL"    ) == 0 ) RETURN_STR(os_home_url);
+  if( g_strcmp0(property_name, "HomeURL" ) == 0 ) RETURN_STR(os_home_url);
   if( g_strcmp0(property_name, "HardwareVendor"            ) == 0 ) RETURN_STR(hw_vendor);
   if( g_strcmp0(property_name, "HardwareModel"             ) == 0 ) RETURN_STR(hw_model);
   if( g_strcmp0(property_name, "FirmwareVersion"           ) == 0 ) RETURN_STR(firmware_version);
@@ -1415,8 +1512,8 @@ handle_method_call( GDBusConnection       *connection,
   }
 
   /* ---- sensitive hardware reads ---- */
-  if( g_strcmp0(method_name, "GetProductUUID") == 0 ||
-      g_strcmp0(method_name, "GetHardwareSerial") == 0 )
+  if( g_strcmp0(method_name, "GetHardwareSerial") == 0 ) { do_get_hardware_serial(invocation); return; }
+  if( g_strcmp0(method_name, "GetProductUUID") == 0 )
   {
     gboolean interactive;
     g_variant_get( parameters, "(b)", &interactive );
@@ -1430,12 +1527,23 @@ handle_method_call( GDBusConnection       *connection,
       ctx->op = OP_GET_PRODUCT_UUID;
       check_polkit_async( ctx, RCL_HOSTNAME_POLKIT_GET_PRODUCT_UUID, interactive );
     }
-    else
-    {
-      ctx->op = OP_GET_HARDWARE_SERIAL;
-      check_polkit_async( ctx, RCL_HOSTNAME_POLKIT_GET_HARDWARE_SERIAL, interactive );
-    }
     return;
+  }
+
+  if( g_strcmp0(method_name, "SetTags") == 0 || g_strcmp0(method_name, "AddAndRemoveTags") == 0 ) {
+    ctx=g_new0(AuthCtx,1); ctx->daemon=g_object_ref(daemon); ctx->invocation=invocation;
+    ctx->op = g_strcmp0(method_name,"SetTags")==0 ? OP_SET_TAGS : OP_ADD_REMOVE_TAGS;
+    ctx->parameters=g_variant_ref(parameters);
+    check_polkit_async(ctx,RCL_HOSTNAME_POLKIT_SET_MACHINE_INFO,FALSE); return;
+  }
+  if( g_strcmp0(method_name, "GetMachineInfo") == 0 ) {
+    const gchar *field; gchar *value; g_variant_get(parameters,"(&s)",&field);
+    if(!field[0] || !g_regex_match_simple("^[A-Z][A-Z0-9_]*$",field,0,0)) {
+      g_dbus_method_invocation_return_error(invocation,G_DBUS_ERROR,G_DBUS_ERROR_INVALID_ARGS,"Invalid machine-info field name"); return;
+    }
+    value=read_key_value_file(RCL_MACHINE_INFO_FILE,field);
+    if(!value) { g_dbus_method_invocation_return_error(invocation,G_DBUS_ERROR,G_DBUS_ERROR_INVALID_ARGS,"Machine-info field '%s' is not set",field); return; }
+    g_dbus_method_invocation_return_value(invocation,g_variant_new("(s)",value)); g_free(value); return;
   }
 
   if( g_strcmp0(method_name, "Describe") == 0 )
@@ -1461,12 +1569,15 @@ handle_method_call( GDBusConnection       *connection,
     ADD_STR( "Chassis",                   priv->chassis );
     ADD_STR( "Deployment",                priv->deployment );
     ADD_STR( "Location",                  priv->location );
+    g_string_append(js, "\"Tags\":[");
+    for(gsize ti=0; priv->tags && priv->tags[ti]; ti++) { gchar *e=json_escape_string(priv->tags[ti]); if(ti) g_string_append_c(js, ','); g_string_append_printf(js, "\"%s\"", e); g_free(e); }
+    g_string_append(js, "],");
     ADD_STR( "KernelName",                priv->kernel_name );
     ADD_STR( "KernelRelease",             priv->kernel_release );
     ADD_STR( "KernelVersion",             priv->kernel_version );
     ADD_STR( "OperatingSystemPrettyName", priv->os_pretty_name );
     ADD_STR( "OperatingSystemCPEName",    priv->os_cpe_name );
-    ADD_STR( "OperatingSystemHomeURL",    priv->os_home_url );
+    ADD_STR( "HomeURL",                  priv->os_home_url );
     ADD_STR( "HardwareVendor",            priv->hw_vendor );
     ADD_STR( "HardwareModel",             priv->hw_model );
     ADD_STR( "FirmwareVersion",           priv->firmware_version );
