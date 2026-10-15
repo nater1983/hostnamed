@@ -1,47 +1,64 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
-
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
 <node name="/org/freedesktop/hostname1">
-    <interface name="org.freedesktop.hostname1">
-        <method name="SetHostname">
-            <arg direction="in" type="s" name="name"/>
-            <arg direction="in" type="b" name="user_interaction"/>
-        </method>
-        <method name="SetStaticHostname">
-            <arg direction="in" type="s" name="name"/>
-            <arg direction="in" type="b" name="user_interaction"/>
-        </method>
-        <method name="SetPrettyHostname">
-            <arg direction="in" type="s" name="name"/>
-            <arg direction="in" type="b" name="user_interaction"/>
-        </method>
-        <method name="SetIconName">
-            <arg direction="in" type="s" name="name"/>
-            <arg direction="in" type="b" name="user_interaction"/>
-        </method>
-        <method name="SetChassis">
-            <arg direction="in" type="s" name="chassis"/>
-            <arg direction="in" type="b" name="interactive"/>
-        </method>
-        <method name="SetDeployment">
-            <arg direction="in" type="s" name="deployment"/>
-            <arg direction="in" type="b" name="interactive"/>
-        </method>
-        <method name="SetLocation">
-            <arg direction="in" type="s" name="location"/>
-            <arg direction="in" type="b" name="interactive"/>
-        </method>
-        <property name="Hostname" type="s" access="read"/>
-        <property name="StaticHostname" type="s" access="read"/>
-        <property name="PrettyHostname" type="s" access="read"/>
-        <property name="IconName" type="s" access="read"/>
-        <property name="Chassis" type="s" access="read"/>
-        <property name="Deployment" type="s" access="read"/>
-        <property name="Location" type="s" access="read"/>
-        <property name="HardwareVendor" type="s" access="read"/>
-        <property name="HardwareModel" type="s" access="read"/>
-        <property name="KernelName" type="s" access="read"/>
-        <property name="KernelRelease" type="s" access="read"/>
-        <property name="KernelVersion" type="s" access="read"/>
-    </interface>
+  <interface name="org.freedesktop.hostname1">
+    <method name="SetHostname">
+      <arg name="name" type="s" direction="in"/>
+      <arg name="interactive" type="b" direction="in"/>
+    </method>
+    <method name="SetStaticHostname">
+      <arg name="name" type="s" direction="in"/>
+      <arg name="interactive" type="b" direction="in"/>
+    </method>
+    <method name="SetPrettyHostname">
+      <arg name="name" type="s" direction="in"/>
+      <arg name="interactive" type="b" direction="in"/>
+    </method>
+    <method name="SetIconName">
+      <arg name="name" type="s" direction="in"/>
+      <arg name="interactive" type="b" direction="in"/>
+    </method>
+    <method name="SetChassis">
+      <arg name="name" type="s" direction="in"/>
+      <arg name="interactive" type="b" direction="in"/>
+    </method>
+    <method name="SetDeployment">
+      <arg name="name" type="s" direction="in"/>
+      <arg name="interactive" type="b" direction="in"/>
+    </method>
+    <method name="SetLocation">
+      <arg name="name" type="s" direction="in"/>
+      <arg name="interactive" type="b" direction="in"/>
+    </method>
+    <method name="GetProductUUID">
+      <arg name="interactive" type="b" direction="in"/>
+      <arg name="uuid" type="ay" direction="out"/>
+    </method>
+    <method name="GetHardwareSerial">
+      <arg name="interactive" type="b" direction="in"/>
+      <arg name="serial" type="s" direction="out"/>
+    </method>
+    <method name="Describe">
+      <arg name="json" type="s" direction="out"/>
+    </method>
+    <property name="Hostname" type="s" access="read"/>
+    <property name="StaticHostname" type="s" access="read"/>
+    <property name="PrettyHostname" type="s" access="read"/>
+    <property name="DefaultHostname" type="s" access="read"/>
+    <property name="HostnameSource" type="s" access="read"/>
+    <property name="IconName" type="s" access="read"/>
+    <property name="Chassis" type="s" access="read"/>
+    <property name="Deployment" type="s" access="read"/>
+    <property name="Location" type="s" access="read"/>
+    <property name="KernelName" type="s" access="read"/>
+    <property name="KernelRelease" type="s" access="read"/>
+    <property name="KernelVersion" type="s" access="read"/>
+    <property name="OperatingSystemPrettyName" type="s" access="read"/>
+    <property name="OperatingSystemCPEName" type="s" access="read"/>
+    <property name="OperatingSystemHomeURL" type="s" access="read"/>
+    <property name="HardwareVendor" type="s" access="read"/>
+    <property name="HardwareModel" type="s" access="read"/>
+    <property name="FirmwareVersion" type="s" access="read"/>
+    <property name="FirmwareDate" type="t" access="read"/>
+  </interface>
 </node>
