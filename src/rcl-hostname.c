@@ -698,7 +698,7 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
   {
     guint32 cid=G_MAXUINT32;
     gchar *cidstr=read_first_line("/sys/class/misc/vsock/dev");
-    if(cidstr) { gchar *end=NULL; guint64 v=g_ascii_strtoull(cidstr,&end,10); if(end && *end=='\\0' && v<=G_MAXUINT32) cid=(guint32)v; }
+    if(cidstr) { gchar *end=NULL; guint64 v=g_ascii_strtoull(cidstr,&end,10); if(end && *end=='\0' && v<=G_MAXUINT32) cid=(guint32)v; }
     g_free(cidstr);
     if(priv->vsock_cid!=cid) { priv->vsock_cid=cid; g_variant_builder_add(&changed_props,"{sv}","VSockCID",g_variant_new_uint32(cid)); any_changed=TRUE; }
   }
