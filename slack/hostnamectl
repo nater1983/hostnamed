@@ -237,8 +237,8 @@ cmd_set_hostname() {
     transient) dbus_set SetHostname "$name" ;;
     pretty)    dbus_set SetPrettyHostname "$name" ;;
     all)
+      # SetStaticHostname persists the name and updates the running hostname.
       dbus_set SetStaticHostname "$name"
-      dbus_set SetHostname "$name"
       ;;
   esac
 
