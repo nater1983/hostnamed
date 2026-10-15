@@ -800,8 +800,9 @@ sync_parent_directory (const gchar *path, GError **error)
   return TRUE;
 }
 
-/* Replace a configuration file atomically. Existing ownership and mode are
- * retained; newly-created files are root:root 0644. The destination is not
+/* Replace a privileged system configuration file atomically. The resulting
+ * file is always owned by root:root; retain an existing regular file's mode
+ * (without special bits), or use 0644 for a new file. The destination is not
  * touched unless the complete temporary file has been written and synced. */
 static gboolean
 atomic_replace_file (const gchar *path, const gchar *contents, gsize length,
@@ -843,9 +844,10 @@ atomic_replace_file (const gchar *path, const gchar *contents, gsize length,
     goto out;
   }
 
-  if (existed && fchown (fd, st.st_uid, st.st_gid) != 0) {
+  /* Never preserve an untrusted owner on a root-managed /etc file. */
+  if (fchown (fd, 0, 0) != 0) {
     g_set_error (error, G_IO_ERROR, g_io_error_from_errno (errno),
-                 "preserve ownership for %s: %s", path, g_strerror (errno));
+                 "set root ownership for %s: %s", path, g_strerror (errno));
     goto close_out;
   }
   /* Preserve ordinary rwx permissions, but never carry setuid/setgid
