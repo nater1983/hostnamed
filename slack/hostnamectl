@@ -6,14 +6,6 @@
 #
 # Copyright 2025, GPLv2+
 
-if [ -f /etc/HOSTNAME ]; then
-  HOSTNAME_FILE="/etc/HOSTNAME"
-else
-  HOSTNAME_FILE="/etc/hostname"
-fi
-
-MACHINE_INFO_FILE="/etc/machine-info"
-
 VALID_CHASSIS=(desktop laptop server tablet handset watch embedded vm container convertible)
 
 # ---------------------------------------------------------------------------
@@ -60,59 +52,8 @@ validate_meta_value() {
   fi
 }
 
-get_os_release() {
-  local key="$1"
-  [ -f /etc/os-release ] && grep "^${key}=" /etc/os-release | cut -d= -f2- | tr -d '"'
-}
-
 dmi_read() {
   cat "${DMI_DIR:-/sys/class/dmi/id}/$1" 2>/dev/null || true
-}
-
-# True for empty values and the unfilled template strings firmware leaves in
-# DMI identity fields (e.g. ASUS: sys_vendor "System manufacturer",
-# product_name "System Product Name").  Keep in sync with
-# rcl_dmi_is_placeholder() in src/rcl-hostname.c.
-dmi_is_placeholder() {
-  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')" in
-    ""|"system manufacturer"|"system product name"|"system version"| \
-    "to be filled by o.e.m."|"default string"|"not applicable"| \
-    "not specified"|"n/a"|"none"|"unknown"|"undefined"|"o.e.m."|"oem"| \
-    "type1productconfigid"|"all series"|"system serial number"| \
-    "chassis serial number"|"base board serial number"|"serial number") return 0 ;;
-  esac
-  return 1
-}
-
-# First usable argument, else empty.
-first_usable() {
-  local v
-  for v in "$@"; do
-    dmi_is_placeholder "$v" || { printf '%s' "$v"; return; }
-  done
-}
-
-machine_info_get() {
-  grep "^${1}=" "$MACHINE_INFO_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' || true
-}
-
-detect_chassis() {
-  local chassis
-  chassis=$(machine_info_get CHASSIS)
-  [ -n "$chassis" ] && { echo "$chassis"; return; }
-
-  local ct
-  ct=$(dmi_read chassis_type)
-  case "$ct" in
-    3|4|5|6|7|13|15|16|24|35|36) echo "desktop" ;;
-    8|9|10|14)  echo "laptop"      ;;
-    11)         echo "handset"     ;;
-    17|23|25|28|29) echo "server"  ;;
-    30|32)      echo "tablet"      ;;
-    31)         echo "convertible" ;;
-    33|34)      echo "embedded"    ;;
-    *)          echo "unknown"     ;;
-  esac
 }
 
 detect_virtualization() {
