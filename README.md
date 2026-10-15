@@ -50,6 +50,46 @@ ninja -C build install          # installs to prefix (default /usr/local)
 sudo ninja -C build install     # for system-wide install
 ```
 
+## Distro integration notes
+
+The daemon is intended to be started by the system D-Bus daemon, not by a
+systemd unit. The installed
+`org.freedesktop.hostname1.service` file provides D-Bus activation and runs
+`hostnamed` as root. Ensure the system bus is configured to load the installed
+service file and `org.freedesktop.hostname1.conf`; restart or reload the
+system bus after installing those files if your distribution does not detect
+them automatically.
+
+On Slackware, the default static-hostname path is `/etc/HOSTNAME`. The daemon
+rewrites that file atomically and preserves its existing owner and permission
+bits. Machine metadata is stored in `/etc/machine-info`, while OS identity is
+read from `/etc/os-release`. Other distributions can override these paths at
+configure time, for example:
+
+```sh
+meson setup build --prefix=/usr \
+  -Dhostname_conf=/etc/hostname \
+  -Dmachine_conf=/etc/machine-info \
+  -Dos_conf=/etc/os-release
+```
+
+The default polkit rule grants the configured privileged group (`wheel` by
+default) the listed hostname-management actions. Review
+`-Dprivileged-group` and the installed polkit rule when packaging for a
+distribution with a different administrative group. Do not solve authorization
+problems by making the configuration files writable by unprivileged users or
+by granting broad write permissions on the D-Bus service.
+
+## Verification
+
+The GitHub Actions workflow configures and compiles the project, runs any
+registered Meson tests, and checks that the shipped XML files are well-formed.
+A successful compile is necessary but not sufficient for release: test the
+installed daemon on a disposable system with the target distribution's D-Bus
+and polkit configuration. In particular, verify D-Bus activation, allowed and
+denied callers, interactive authorization, file replacement by rename, changes
+made by external tools, and behavior after restarting the system bus.
+
 ## Project layout
 
 ```
