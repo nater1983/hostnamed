@@ -29,11 +29,22 @@
     <property name="KernelRelease" type="s" access="read"/>
     <property name="KernelVersion" type="s" access="read"/>
     <property name="OperatingSystemPrettyName" type="s" access="read"/>
+    <property name="OperatingSystemFancyName" type="s" access="read"/>
     <property name="OperatingSystemCPEName" type="s" access="read"/>
+    <property name="OperatingSystemSupportEnd" type="t" access="read"/>
     <property name="HomeURL" type="s" access="read"/>
+    <property name="OperatingSystemImageID" type="s" access="read"/>
+    <property name="OperatingSystemImageVersion" type="s" access="read"/>
     <property name="HardwareVendor" type="s" access="read"/>
     <property name="HardwareModel" type="s" access="read"/>
+    <property name="HardwareSKU" type="s" access="read"/>
+    <property name="HardwareVersion" type="s" access="read"/>
     <property name="FirmwareVersion" type="s" access="read"/>
+    <property name="FirmwareVendor" type="s" access="read"/>
     <property name="FirmwareDate" type="t" access="read"/>
+    <property name="MachineID" type="ay" access="read"/>
+    <property name="BootID" type="ay" access="read"/>
+    <property name="VSockCID" type="u" access="read"/>
+    <property name="ChassisAssetTag" type="s" access="read"/>
   </interface>
 </node>
