@@ -2,45 +2,19 @@
 <!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
 <node name="/org/freedesktop/hostname1">
   <interface name="org.freedesktop.hostname1">
-    <method name="SetHostname">
-      <arg name="name" type="s" direction="in"/>
-      <arg name="interactive" type="b" direction="in"/>
-    </method>
-    <method name="SetStaticHostname">
-      <arg name="name" type="s" direction="in"/>
-      <arg name="interactive" type="b" direction="in"/>
-    </method>
-    <method name="SetPrettyHostname">
-      <arg name="name" type="s" direction="in"/>
-      <arg name="interactive" type="b" direction="in"/>
-    </method>
-    <method name="SetIconName">
-      <arg name="name" type="s" direction="in"/>
-      <arg name="interactive" type="b" direction="in"/>
-    </method>
-    <method name="SetChassis">
-      <arg name="name" type="s" direction="in"/>
-      <arg name="interactive" type="b" direction="in"/>
-    </method>
-    <method name="SetDeployment">
-      <arg name="name" type="s" direction="in"/>
-      <arg name="interactive" type="b" direction="in"/>
-    </method>
-    <method name="SetLocation">
-      <arg name="name" type="s" direction="in"/>
-      <arg name="interactive" type="b" direction="in"/>
-    </method>
-    <method name="GetProductUUID">
-      <arg name="interactive" type="b" direction="in"/>
-      <arg name="uuid" type="ay" direction="out"/>
-    </method>
-    <method name="GetHardwareSerial">
-      <arg name="interactive" type="b" direction="in"/>
-      <arg name="serial" type="s" direction="out"/>
-    </method>
-    <method name="Describe">
-      <arg name="json" type="s" direction="out"/>
-    </method>
+    <method name="SetHostname"><arg name="hostname" type="s" direction="in"/><arg name="interactive" type="b" direction="in"/></method>
+    <method name="SetStaticHostname"><arg name="hostname" type="s" direction="in"/><arg name="interactive" type="b" direction="in"/></method>
+    <method name="SetPrettyHostname"><arg name="pretty_hostname" type="s" direction="in"/><arg name="interactive" type="b" direction="in"/></method>
+    <method name="SetIconName"><arg name="icon" type="s" direction="in"/><arg name="interactive" type="b" direction="in"/></method>
+    <method name="SetChassis"><arg name="chassis" type="s" direction="in"/><arg name="interactive" type="b" direction="in"/></method>
+    <method name="SetDeployment"><arg name="deployment" type="s" direction="in"/><arg name="interactive" type="b" direction="in"/></method>
+    <method name="SetLocation"><arg name="location" type="s" direction="in"/><arg name="interactive" type="b" direction="in"/></method>
+    <method name="SetTags"><arg name="tags" type="as" direction="in"/></method>
+    <method name="AddAndRemoveTags"><arg name="add" type="as" direction="in"/><arg name="remove" type="as" direction="in"/></method>
+    <method name="GetProductUUID"><arg name="interactive" type="b" direction="in"/><arg name="uuid" type="ay" direction="out"/></method>
+    <method name="GetHardwareSerial"><arg name="serial" type="s" direction="out"/></method>
+    <method name="Describe"><arg name="json" type="s" direction="out"/></method>
+    <method name="GetMachineInfo"><arg name="field" type="s" direction="in"/><arg name="value" type="s" direction="out"/></method>
     <property name="Hostname" type="s" access="read"/>
     <property name="StaticHostname" type="s" access="read"/>
     <property name="PrettyHostname" type="s" access="read"/>
@@ -50,12 +24,13 @@
     <property name="Chassis" type="s" access="read"/>
     <property name="Deployment" type="s" access="read"/>
     <property name="Location" type="s" access="read"/>
+    <property name="Tags" type="as" access="read"/>
     <property name="KernelName" type="s" access="read"/>
     <property name="KernelRelease" type="s" access="read"/>
     <property name="KernelVersion" type="s" access="read"/>
     <property name="OperatingSystemPrettyName" type="s" access="read"/>
     <property name="OperatingSystemCPEName" type="s" access="read"/>
-    <property name="OperatingSystemHomeURL" type="s" access="read"/>
+    <property name="HomeURL" type="s" access="read"/>
     <property name="HardwareVendor" type="s" access="read"/>
     <property name="HardwareModel" type="s" access="read"/>
     <property name="FirmwareVersion" type="s" access="read"/>
