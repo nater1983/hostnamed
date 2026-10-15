@@ -276,6 +276,30 @@ Returns the first usable serial number from the DMI product, board, or chassis
 serial fields. Placeholder values are skipped. On systems without a usable
 DMI serial, the device-tree serial-number property is used when available.
 .TP
+.B SetTags(as tags)
+Replaces the machine's tag list with
+.IR tags .
+Requires the
+.B org.freedesktop.hostname1.set-machine-info
+PolKit action.
+.TP
+.B AddAndRemoveTags(as add, as remove)
+Adds the tags in
+.I add
+and removes the tags in
+.IR remove .
+Requires the
+.B org.freedesktop.hostname1.set-machine-info
+PolKit action.
+.TP
+.B GetMachineInfo(s field) \(-> s
+Returns the value of an uppercase machine-info key from
+.IR /etc/machine-info .
+The field name must match an uppercase key identifier. If the name is
+invalid or the key is not set, the method returns an
+.B org.freedesktop.DBus.Error.InvalidArgs
+error.
+.TP
 .B Describe() \(-> s
 Returns a single JSON object containing the current value of every
 property listed above, for clients that prefer one bulk read over
