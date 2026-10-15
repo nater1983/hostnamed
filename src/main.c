@@ -69,6 +69,12 @@ typedef struct RclState
   gboolean    exiting;
 } RclState;
 
+typedef struct RclFileWatch
+{
+  RclState *state;
+  gchar    *basename;
+} RclFileWatch;
+
 /* ───────────────────────────────────────────── */
 
 static void
@@ -311,17 +317,84 @@ rcl_main_log_handler_cb(const gchar    *log_domain,
 
 /* ───────────────────────────────────────────── */
 
-static gboolean
-rcl_main_inotify_cb(gpointer user_data)
+static void
+rcl_file_watch_free(gpointer user_data, GClosure *closure)
 {
-  RclState *state = user_data;
-  RclHostnameDaemon *object = RCL_HOSTNAME_DAEMON(state->daemon);
+  RclFileWatch *watch = user_data;
+  g_free(watch->basename);
+  g_free(watch);
+}
 
-  LOG(state, "file change detected → syncing DBus properties");
+/*
+ * Watch the containing directory rather than the file itself.  Atomic
+ * replacement (write temporary file + rename) changes the directory entry
+ * and can leave a file monitor attached to the old inode.  Directory
+ * monitoring also works when a configuration file is initially absent.
+ */
+static void
+rcl_main_directory_changed(GFileMonitor      *monitor,
+                           GFile            *file,
+                           GFile            *other_file,
+                           GFileMonitorEvent event_type,
+                           gpointer          user_data)
+{
+  RclFileWatch *watch = user_data;
+  gchar *basename = g_file_get_basename(file);
+  gboolean relevant = g_strcmp0(basename, watch->basename) == 0;
 
-  rcl_daemon_sync_dbus_properties(object);
+  g_free(basename);
 
-  return G_SOURCE_CONTINUE;
+  if (!relevant && other_file)
+  {
+    basename = g_file_get_basename(other_file);
+    relevant = g_strcmp0(basename, watch->basename) == 0;
+    g_free(basename);
+  }
+
+  if (!relevant)
+    return;
+
+  LOG(watch->state, "change to %s detected; syncing D-Bus properties",
+      watch->basename);
+  rcl_daemon_sync_dbus_properties(
+    RCL_HOSTNAME_DAEMON(watch->state->daemon));
+}
+
+static GFileMonitor *
+rcl_monitor_config_file(RclState *state, const gchar *path)
+{
+  gchar *directory = g_path_get_dirname(path);
+  gchar *basename = g_path_get_basename(path);
+  GFile *directory_file = g_file_new_for_path(directory);
+  GFileMonitor *monitor;
+  GError *error = NULL;
+  RclFileWatch *watch;
+
+  monitor = g_file_monitor_directory(directory_file,
+                                     G_FILE_MONITOR_WATCH_MOVES,
+                                     NULL, &error);
+  if (!monitor)
+  {
+    g_warning("could not watch directory %s for %s: %s",
+              directory, basename,
+              error ? error->message : "unknown error");
+    g_clear_error(&error);
+    g_object_unref(directory_file);
+    g_free(directory);
+    g_free(basename);
+    return NULL;
+  }
+
+  watch = g_new0(RclFileWatch, 1);
+  watch->state = state;
+  watch->basename = basename;
+  g_signal_connect_data(monitor, "changed",
+                        G_CALLBACK(rcl_main_directory_changed),
+                        watch, rcl_file_watch_free, 0);
+
+  g_object_unref(directory_file);
+  g_free(directory);
+  return monitor;
 }
 
 /* ───────────────────────────────────────────── */
@@ -439,37 +512,15 @@ gint main(gint argc, gchar **argv)
   g_unix_signal_add(SIGTERM, rcl_main_sigterm_cb, state);
 
   /*
-   * File monitoring.
-   *
-   * HOSTNAME_FILE comes from config.h (meson option 'HOSTNAME',
-   * default /etc/HOSTNAME).  G_FILE_MONITOR_WATCH_MOVES catches both
-   * direct writes and atomic rename-based writes.
+   * Watch the parent directories, not individual inodes.  This catches
+   * atomic rename replacement and files that do not exist at startup.
+   * Each watch filters events to its own configured basename.
    */
   hostname_file = g_file_new_for_path(RCL_HOSTNAME_FILE);
-  hostname_mon  = g_file_monitor_file(hostname_file,
-                                      G_FILE_MONITOR_WATCH_MOVES,
-                                      NULL, &error);
-  if (hostname_mon)
-    g_signal_connect_swapped(hostname_mon, "changed",
-                             G_CALLBACK(rcl_main_inotify_cb), state);
-  else
-  {
-    g_warning("could not watch %s: %s", RCL_HOSTNAME_FILE, error->message);
-    g_clear_error(&error);
-  }
+  hostname_mon = rcl_monitor_config_file(state, RCL_HOSTNAME_FILE);
 
   machineinfo_file = g_file_new_for_path(RCL_MACHINE_INFO_FILE);
-  machineinfo_mon  = g_file_monitor_file(machineinfo_file,
-                                         G_FILE_MONITOR_WATCH_MOVES,
-                                         NULL, &error);
-  if (machineinfo_mon)
-    g_signal_connect_swapped(machineinfo_mon, "changed",
-                             G_CALLBACK(rcl_main_inotify_cb), state);
-  else
-  {
-    g_warning("could not watch %s: %s", RCL_MACHINE_INFO_FILE, error->message);
-    g_clear_error(&error);
-  }
+  machineinfo_mon = rcl_monitor_config_file(state, RCL_MACHINE_INFO_FILE);
 
   /* Acquire the D-Bus name for the first time */
   rcl_acquire_name(state);
