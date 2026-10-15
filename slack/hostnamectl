@@ -36,6 +36,23 @@ dbus_set() {
     || die "D-Bus method ${method} failed"
 }
 
+# Read a hostname1 property. gdbus prints a single string variant as
+# (< 'value' >,); strip the wrapper for the human-readable status output.
+dbus_get() {
+  local property="$1"
+  local result
+  command -v gdbus >/dev/null 2>&1 || die "gdbus is required to read hostname settings"
+  result=$(gdbus call --system \
+    --dest org.freedesktop.hostname1 \
+    --object-path /org/freedesktop/hostname1 \
+    --method org.freedesktop.DBus.Properties.Get \
+    org.freedesktop.hostname1 "$property" 2>/dev/null) \
+    || die "cannot read hostname1 property '$property' from D-Bus"
+  result=${result#"(<'"}
+  result=${result%"'>,)"}
+  printf '%s' "$result"
+}
+
 validate_meta_value() {
   local value="$1" key="$2"
   if printf '%s' "$value" | grep -qP '[\x00-\x1f\x7f"\\]'; then
@@ -129,18 +146,19 @@ cmd_status() {
   local os_name os_cpe kernel arch
   local hw_vendor hw_model fw_version fw_date
 
-  static_hostname=$(cat "$HOSTNAME_FILE" 2>/dev/null | tr -d '[:space:]')
+  # hostname1 properties are the authoritative view exposed to clients.
+  static_hostname=$(dbus_get StaticHostname)
   [ -z "$static_hostname" ] && static_hostname="n/a"
 
-  transient_hostname=$(hostname 2>/dev/null || true)
+  transient_hostname=$(dbus_get Hostname)
   [ -z "$transient_hostname" ] && transient_hostname="n/a"
 
-  pretty_hostname=$(machine_info_get PRETTY_HOSTNAME)
-  icon_name=$(machine_info_get ICON_NAME)
+  pretty_hostname=$(dbus_get PrettyHostname)
+  icon_name=$(dbus_get IconName)
   [ -z "$icon_name" ] && icon_name="computer"
-  chassis=$(detect_chassis)
-  deployment=$(machine_info_get DEPLOYMENT)
-  location=$(machine_info_get LOCATION)
+  chassis=$(dbus_get Chassis)
+  deployment=$(dbus_get Deployment)
+  location=$(dbus_get Location)
 
   machine_id=$(cat /etc/machine-id 2>/dev/null | tr -d '[:space:]')
   [ -z "$machine_id" ] && machine_id="n/a"
@@ -150,12 +168,12 @@ cmd_status() {
 
   virtualization=$(detect_virtualization)
 
-  os_name=$(get_os_release PRETTY_NAME)
-  [ -z "$os_name" ] && os_name=$(get_os_release NAME)
+  os_name=$(dbus_get OperatingSystemPrettyName)
   [ -z "$os_name" ] && os_name="Unknown OS"
-  os_cpe=$(get_os_release CPE_NAME)
+  os_cpe=$(dbus_get OperatingSystemCPEName)
 
-  kernel=$(uname -r)
+  kernel=$(dbus_get KernelRelease)
+  [ -z "$kernel" ] && kernel=$(uname -r)
   arch=$(uname -m)
 
   dt_dir=${DT_DIR:-/sys/firmware/devicetree/base}
@@ -169,9 +187,9 @@ cmd_status() {
   if [ -r "$dt_dir/compatible" ]; then
     dt_vendor=$(tr '\0' '\n' < "$dt_dir/compatible" | head -n1 | cut -d, -f1)
   fi
-  hw_vendor=$(first_usable "$(dmi_read sys_vendor)" "$(dmi_read board_vendor)" "$dt_vendor")
-  hw_model=$(first_usable "$(dmi_read product_name)" "$(dmi_read board_name)" "$dt_model")
-  fw_version=$(dmi_read bios_version)
+  hw_vendor=$(dbus_get HardwareVendor)
+  hw_model=$(dbus_get HardwareModel)
+  fw_version=$(dbus_get FirmwareVersion)
   fw_date=$(dmi_read bios_date)
 
   printf "   Static hostname: %s\n" "$static_hostname"
