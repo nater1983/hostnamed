@@ -83,67 +83,6 @@ machine_info_get() {
   grep "^${1}=" "$MACHINE_INFO_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' || true
 }
 
-# Atomically write or remove a KEY="value" entry in /etc/machine-info.
-# Passing an empty value removes the key entirely.
-machine_info_set() {
-  local key="$1"
-  local value="$2"
-  local tmp
-
-  touch "$MACHINE_INFO_FILE" 2>/dev/null || die "cannot write $MACHINE_INFO_FILE"
-
-  tmp=$(mktemp "${MACHINE_INFO_FILE}.XXXXXX") || die "cannot create temp file"
-
-  grep -v "^${key}=" "$MACHINE_INFO_FILE" > "$tmp" 2>/dev/null || true
-
-  if [ -n "$value" ]; then
-    echo "${key}=\"${value}\"" >> "$tmp"
-  fi
-
-  mv "$tmp" "$MACHINE_INFO_FILE" || { rm -f "$tmp"; die "cannot update $MACHINE_INFO_FILE"; }
-  chmod 644 "$MACHINE_INFO_FILE" || die "cannot set permissions on $MACHINE_INFO_FILE"
-}
-
-# Write out a fully populated /etc/machine-info from detected values.
-# Called automatically if the file does not exist yet.
-# An existing file is never overwritten by this function.
-init_machine_info() {
-  [ -f "$MACHINE_INFO_FILE" ] && return
-
-  local chassis icon pretty
-  local ct
-  ct=$(dmi_read chassis_type)
-  case "$ct" in
-    3|4|5|6|7|13|15|16|24|35|36) chassis="desktop";     icon="computer-desktop" ;;
-    8|9|10|14)  chassis="laptop";      icon="computer-laptop"  ;;
-    11)         chassis="handset";     icon="phone"            ;;
-    17|23|25|28|29) chassis="server";  icon="computer-server"  ;;
-    30|32)      chassis="tablet";      icon="computer-tablet"  ;;
-    31)         chassis="convertible"; icon="computer-laptop"  ;;
-    33|34)      chassis="embedded";    icon="computer"         ;;
-    *)          chassis="";            icon="computer"         ;;
-  esac
-
-  # Use the static hostname as the initial pretty hostname
-  pretty=$(cat "$HOSTNAME_FILE" 2>/dev/null | tr -d '[:space:]' | cut -d. -f1)
-
-  local tmp
-  tmp=$(mktemp "${MACHINE_INFO_FILE}.XXXXXX") || return
-
-  cat > "$tmp" << 'EOF'
-# /etc/machine-info - see machine-info(5)
-EOF
-  printf 'PRETTY_HOSTNAME="%s"\n' "$pretty" >> "$tmp"
-  printf 'ICON_NAME="%s"\n'       "$icon"   >> "$tmp"
-  printf 'CHASSIS="%s"\n'         "$chassis" >> "$tmp"
-  printf 'DEPLOYMENT=""\n'                   >> "$tmp"
-  printf 'LOCATION=""\n'                     >> "$tmp"
-
-  mv "$tmp" "$MACHINE_INFO_FILE" || { rm -f "$tmp"; return; }
-  chmod 644 "$MACHINE_INFO_FILE" || return
-  echo "Created $MACHINE_INFO_FILE"
-}
-
 detect_chassis() {
   local chassis
   chassis=$(machine_info_get CHASSIS)
