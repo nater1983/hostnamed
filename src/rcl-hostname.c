@@ -1074,11 +1074,24 @@ do_set_static_hostname( RclHostnameDaemon *daemon, const gchar *name,
     }
 
     if( sethostname( name, strlen(name) ) != 0 )
-      g_warning( "sethostname(%s) failed: %s", name, g_strerror(errno) );
+    {
+      g_dbus_method_invocation_return_error( invocation,
+        G_IO_ERROR, g_io_error_from_errno(errno),
+        "sethostname(%s) failed after updating %s: %s",
+        name, RCL_HOSTNAME_FILE, g_strerror(errno) );
+      return;
+    }
   }
   else
   {
-    g_unlink( RCL_HOSTNAME_FILE );
+    if( g_unlink( RCL_HOSTNAME_FILE ) != 0 && errno != ENOENT )
+    {
+      g_dbus_method_invocation_return_error( invocation,
+        G_IO_ERROR, g_io_error_from_errno(errno),
+        "Cannot remove static hostname file %s: %s",
+        RCL_HOSTNAME_FILE, g_strerror(errno) );
+      return;
+    }
   }
 
   rcl_daemon_sync_dbus_properties( daemon );
@@ -1291,8 +1304,12 @@ on_check_done( GObject *source, GAsyncResult *res, gpointer user_data )
 
   if( !result )
   {
-    g_dbus_method_invocation_return_gerror( ctx->invocation, error );
-    g_error_free( error );
+    /* Do not leak a GLib/polkit implementation error name onto the public
+       hostname1 API. Return a stable D-Bus failure and retain the detail. */
+    g_dbus_method_invocation_return_dbus_error( ctx->invocation,
+      "org.freedesktop.DBus.Error.Failed",
+      error ? error->message : "Authorization service failed" );
+    g_clear_error( &error );
     auth_ctx_free( ctx );
     return;
   }
@@ -1308,9 +1325,9 @@ on_check_done( GObject *source, GAsyncResult *res, gpointer user_data )
         "org.freedesktop.DBus.Error.InteractiveAuthorizationRequired",
         "Authentication is required to perform the requested action" );
     else
-      g_dbus_method_invocation_return_error( ctx->invocation,
-        G_DBUS_ERROR, G_DBUS_ERROR_AUTH_FAILED,
-        "Not authorised to perform the requested action" );
+      g_dbus_method_invocation_return_dbus_error( ctx->invocation,
+        "org.freedesktop.DBus.Error.AccessDenied",
+        "Not authorized to perform the requested action" );
     g_object_unref( result );
     auth_ctx_free( ctx );
     return;
@@ -1363,8 +1380,10 @@ check_polkit_async( AuthCtx *ctx, const gchar *action_id, gboolean interactive )
     priv->authority = polkit_authority_get_sync( NULL, &err );
     if( priv->authority == NULL )
     {
-      g_dbus_method_invocation_return_gerror( ctx->invocation, err );
-      g_error_free( err );
+      g_dbus_method_invocation_return_dbus_error( ctx->invocation,
+        "org.freedesktop.DBus.Error.Failed",
+        err ? err->message : "Unable to connect to the authorization service" );
+      g_clear_error( &err );
       auth_ctx_free( ctx );
       return;
     }
@@ -1512,7 +1531,11 @@ handle_method_call( GDBusConnection       *connection,
       ctx->key        = g_strdup( key );
       ctx->name       = g_strdup( name );
 
-      check_polkit_async( ctx, RCL_HOSTNAME_POLKIT_SET_MACHINE_INFO, interactive );
+      check_polkit_async( ctx,
+        g_strcmp0(key, "PRETTY_HOSTNAME") == 0
+          ? RCL_HOSTNAME_POLKIT_SET_STATIC
+          : RCL_HOSTNAME_POLKIT_SET_MACHINE_INFO,
+        interactive );
       return;
     }
   }
