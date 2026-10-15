@@ -164,45 +164,80 @@ static void rcl_daemon_init( RclDaemon *self ) {}
    -------------------------------------------------------------------------- */
 
 /*
- * SMBIOS chassis types → freedesktop icon names.
- * Numeric values from SMBIOS spec 3.x, Table 17.
+ * Chassis handling.  One table drives everything: the SMBIOS chassis type
+ * (SMBIOS spec 3.x, Table 17) maps to a Chassis string, and the Chassis
+ * string maps to an icon name.  Keep this in sync with the case statements
+ * in slack/hostnamectl.
  */
-const gchar *
-rcl_chassis_type_to_icon_name( guint t )
-{
-  switch( t )
-  {
-    case  3: /* Desktop          */ return "computer-desktop";
-    case  4: /* Low Profile      */ return "computer-desktop";
-    case  6: /* Mini Tower       */ return "computer-desktop";
-    case  7: /* Tower            */ return "computer-desktop";
-    case  8: /* Portable         */ return "computer-laptop";
-    case  9: /* Laptop           */ return "computer-laptop";
-    case 10: /* Notebook         */ return "computer-laptop";
-    case 11: /* Hand-held        */ return "phone";
-    case 14: /* Sub-Notebook     */ return "computer-laptop";
-    case 18: /* Expansion Chassis*/ return "computer-desktop";
-    case 21: /* Peripheral       */ return "computer-desktop";
-    case 30: /* Tablet           */ return "computer-tablet";
-    case 31: /* Convertible      */ return "computer-laptop";
-    case 32: /* Detachable       */ return "computer-tablet";
-    default:                        return "computer";
-  }
-}
-
 const gchar *
 rcl_chassis_type_to_string( guint t )
 {
   switch( t )
   {
-    case  3: case  4: case  6: case  7: return "desktop";
-    case  8: case  9: case 10: case 14: return "laptop";
-    case 11:                            return "handset";
-    case 17:                            return "server";
-    case 30: case 32:                   return "tablet";
-    case 31:                            return "convertible";
-    default:                            return "";
+    case  3: /* Desktop            */
+    case  4: /* Low Profile Desktop*/
+    case  5: /* Pizza Box          */
+    case  6: /* Mini Tower         */
+    case  7: /* Tower              */
+    case 13: /* All In One         */
+    case 15: /* Space-saving       */
+    case 16: /* Lunch Box          */
+    case 24: /* Sealed-case PC     */
+    case 35: /* Mini PC            */
+    case 36: /* Stick PC           */ return "desktop";
+    case  8: /* Portable           */
+    case  9: /* Laptop             */
+    case 10: /* Notebook           */
+    case 14: /* Sub Notebook       */ return "laptop";
+    case 11: /* Hand Held          */ return "handset";
+    case 17: /* Main Server        */
+    case 23: /* Rack Mount Server  */
+    case 25: /* Multi-system       */
+    case 28: /* Blade              */
+    case 29: /* Blade Enclosure    */ return "server";
+    case 30: /* Tablet             */
+    case 32: /* Detachable         */ return "tablet";
+    case 31: /* Convertible        */ return "convertible";
+    case 33: /* IoT Gateway        */
+    case 34: /* Embedded PC        */ return "embedded";
+    default:                         return "";
   }
+}
+
+gboolean
+rcl_chassis_is_known( const gchar *c )
+{
+  static const gchar *const known[] =
+    { "desktop", "laptop", "convertible", "server", "tablet", "handset",
+      "watch", "embedded", "vm", "container", NULL };
+  guint i;
+
+  for( i = 0; c && known[i]; i++ )
+    if( g_strcmp0( c, known[i] ) == 0 )
+      return TRUE;
+  return FALSE;
+}
+
+const gchar *
+rcl_chassis_to_icon_name( const gchar *c )
+{
+  if( !c )                                return "computer";
+  if( g_strcmp0( c, "desktop"     ) == 0 ) return "computer-desktop";
+  if( g_strcmp0( c, "laptop"      ) == 0 ) return "computer-laptop";
+  if( g_strcmp0( c, "convertible" ) == 0 ) return "computer-laptop";
+  if( g_strcmp0( c, "server"      ) == 0 ) return "computer-server";
+  if( g_strcmp0( c, "tablet"      ) == 0 ) return "computer-tablet";
+  if( g_strcmp0( c, "handset"     ) == 0 ) return "phone";
+  if( g_strcmp0( c, "watch"       ) == 0 ) return "watch";
+  if( g_strcmp0( c, "vm"          ) == 0 ) return "computer-vm";
+  if( g_strcmp0( c, "container"   ) == 0 ) return "container";
+  return "computer";
+}
+
+const gchar *
+rcl_chassis_type_to_icon_name( guint t )
+{
+  return rcl_chassis_to_icon_name( rcl_chassis_type_to_string( t ) );
 }
 
 /* --------------------------------------------------------------------------
@@ -285,6 +320,70 @@ read_dmi( const gchar *path )
   return val ? val : g_strdup( "" );
 }
 
+/* Firmware routinely leaves unfilled template strings in the DMI identity
+   fields (very common on retail desktop boards, e.g. ASUS reports
+   sys_vendor "System manufacturer" and product_name "System Product Name"
+   while the real names live in board_vendor / board_name).  Treat those,
+   and empty values, as "not set" so the next source is used. */
+static gboolean
+rcl_dmi_is_placeholder( const gchar *v )
+{
+  static const gchar *const junk[] = {
+    "System manufacturer", "System Product Name", "System Version",
+    "To Be Filled By O.E.M.", "To be filled by O.E.M.", "Default string",
+    "Not Applicable", "Not Specified", "N/A", "None", "Unknown", "Undefined",
+    "O.E.M.", "OEM", "Type1ProductConfigId", "All Series",
+    "System Serial Number", "Chassis Serial Number", "Base Board Serial Number",
+    "Serial Number", NULL
+  };
+  gchar   *t;
+  gboolean bad = FALSE;
+  guint    i;
+
+  if( !v )
+    return TRUE;
+  t = g_strstrip( g_strdup( v ) );
+  if( t[0] == '\0' )
+    bad = TRUE;
+  for( i = 0; !bad && junk[i]; i++ )
+    if( g_ascii_strcasecmp( t, junk[i] ) == 0 )
+      bad = TRUE;
+  g_free( t );
+  return bad;
+}
+
+/* First usable (non-empty, non-placeholder) of the given strings, as a
+   newly-allocated string; "" if none is usable. */
+static gchar *
+first_usable_dup( const gchar *a, const gchar *b, const gchar *c )
+{
+  if( !rcl_dmi_is_placeholder( a ) ) return g_strstrip( g_strdup( a ) );
+  if( !rcl_dmi_is_placeholder( b ) ) return g_strstrip( g_strdup( b ) );
+  if( !rcl_dmi_is_placeholder( c ) ) return g_strstrip( g_strdup( c ) );
+  return g_strdup( "" );
+}
+
+/* Device-tree string property (NUL-terminated); "" when absent. */
+static gchar *
+read_dt_string( const gchar *path )
+{
+  gchar *v = read_first_line( path );
+  return v ? v : g_strdup( "" );
+}
+
+/* The device-tree "compatible" property is a NUL-separated list of
+   "vendor,model" strings, most specific first.  Return the vendor prefix of
+   the first entry (e.g. "raspberrypi" from "raspberrypi,5-model-b"), or "". */
+static gchar *
+dt_vendor_from_compatible( const gchar *first_entry )
+{
+  const gchar *comma;
+
+  if( !first_entry || !( comma = strchr( first_entry, ',' ) ) || comma == first_entry )
+    return g_strdup( "" );
+  return g_strndup( first_entry, (gsize)( comma - first_entry ) );
+}
+
 /* --------------------------------------------------------------------------
    FirmwareDate parser
 
@@ -316,6 +415,8 @@ parse_firmware_date_usec (const gchar *date_str)
 
   return (guint64) t * G_USEC_PER_SEC;
 }
+
+static gboolean rcl_hostname_is_valid( const gchar *name );
 
 /* --------------------------------------------------------------------------
    Property refresh
@@ -381,46 +482,70 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
                    read_key_value_file( RCL_MACHINE_INFO_FILE, "LOCATION" ),
                    "Location" );
 
-  /* ---- chassis / icon: machine-info wins, DMI is the fallback ----
-     The effective value is computed first and then fed through
-     UPDATE_STR_PROP exactly once, so an unchanged value never produces a
-     PropertiesChanged entry (previously the machine-info read blanked the
-     field and the DMI fallback re-set it on every sync, emitting duplicate
-     Chassis/IconName entries each time). */
+  /* ---- chassis / icon ----
+     Chassis: machine-info, then DMI chassis type, then the device-tree
+     chassis-type property.  Icon: machine-info, else derived from the
+     effective chassis string.  Each value is computed first and passed
+     through UPDATE_STR_PROP exactly once, so an unchanged value never
+     produces a PropertiesChanged entry. */
   {
     gchar *chassis_val = read_key_value_file( RCL_MACHINE_INFO_FILE, "CHASSIS" );
     gchar *icon_val    = read_key_value_file( RCL_MACHINE_INFO_FILE, "ICON_NAME" );
-    gboolean need_chassis = ( chassis_val == NULL || chassis_val[0] == '\0' );
-    gboolean need_icon    = ( icon_val    == NULL || icon_val[0]    == '\0' );
 
-    if( need_chassis || need_icon )
+    if( chassis_val == NULL || chassis_val[0] == '\0' )
     {
       gchar *dmi_chassis_type = read_dmi( RCL_DMI_CHASSIS_TYPE );
       chassis_num = (guint) g_ascii_strtoull( dmi_chassis_type, NULL, 10 );
       g_free( dmi_chassis_type );
-    }
 
-    if( need_chassis )
-    {
       g_free( chassis_val );
       chassis_val = g_strdup( rcl_chassis_type_to_string( chassis_num ) );
+
+      if( chassis_val[0] == '\0' )
+      {
+        gchar *dt = read_dt_string( RCL_DT_CHASSIS_TYPE );
+        if( rcl_chassis_is_known( dt ) )
+        {
+          g_free( chassis_val );
+          chassis_val = dt;
+        }
+        else
+          g_free( dt );
+      }
     }
-    if( need_icon )
+
+    if( icon_val == NULL || icon_val[0] == '\0' )
     {
       g_free( icon_val );
-      icon_val = g_strdup( rcl_chassis_type_to_icon_name( chassis_num ) );
+      icon_val = g_strdup( rcl_chassis_to_icon_name( chassis_val ) );
     }
 
     UPDATE_STR_PROP( chassis,   chassis_val, "Chassis" );
     UPDATE_STR_PROP( icon_name, icon_val,    "IconName" );
   }
 
-  /* ---- HostnameSource ---- */
+  /* ---- DefaultHostname: os-release DEFAULT_HOSTNAME, else "localhost" ---- */
+  {
+    gchar *def = read_key_value_file( RCL_OS_RELEASE_FILE, "DEFAULT_HOSTNAME" );
+    if( !def || !rcl_hostname_is_valid( def ) )
+    {
+      g_free( def );
+      def = g_strdup( "localhost" );
+    }
+    UPDATE_STR_PROP( default_hostname, def, "DefaultHostname" );
+  }
+
+  /* ---- HostnameSource ----
+     static    – a static hostname is configured
+     transient – none configured, kernel hostname was set to something else
+     default   – none configured, kernel hostname unset or equal to default */
   {
     const gchar *src;
     if( priv->static_hostname && priv->static_hostname[0] != '\0' )
       src = "static";
-    else if( priv->hostname && priv->hostname[0] != '\0' )
+    else if( priv->hostname && priv->hostname[0] != '\0' &&
+             g_strcmp0( priv->hostname, "(none)" ) != 0 &&
+             g_strcmp0( priv->hostname, priv->default_hostname ) != 0 )
       src = "transient";
     else
       src = "default";
@@ -449,8 +574,24 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
                    "OperatingSystemHomeURL" );
 
   /* ---- DMI hardware info ---- */
-  UPDATE_STR_PROP( hw_vendor,        read_dmi(RCL_DMI_BOARD_VENDOR),  "HardwareVendor" );
-  UPDATE_STR_PROP( hw_model,         read_dmi(RCL_DMI_PRODUCT_NAME),  "HardwareModel" );
+  /* Vendor: DMI system vendor, board vendor, then the device-tree
+     compatible prefix.  Model: DMI product name, board name, then the
+     device-tree model.  Placeholder strings are skipped at each step. */
+  {
+    gchar *sys_v   = read_dmi( RCL_DMI_SYS_VENDOR );
+    gchar *board_v = read_dmi( RCL_DMI_BOARD_VENDOR );
+    gchar *compat  = read_dt_string( RCL_DT_COMPATIBLE );
+    gchar *dt_v    = dt_vendor_from_compatible( compat );
+    gchar *prod    = read_dmi( RCL_DMI_PRODUCT_NAME );
+    gchar *board_n = read_dmi( RCL_DMI_BOARD_NAME );
+    gchar *dt_m    = read_dt_string( RCL_DT_MODEL );
+
+    UPDATE_STR_PROP( hw_vendor, first_usable_dup( sys_v, board_v, dt_v ), "HardwareVendor" );
+    UPDATE_STR_PROP( hw_model,  first_usable_dup( prod, board_n, dt_m ),  "HardwareModel" );
+
+    g_free( sys_v ); g_free( board_v ); g_free( compat ); g_free( dt_v );
+    g_free( prod );  g_free( board_n ); g_free( dt_m );
+  }
   UPDATE_STR_PROP( firmware_version, read_dmi(RCL_DMI_BIOS_VERSION),  "FirmwareVersion" );
 
   /* FirmwareDate is type 't' (uint64 µs since epoch) per the spec */
@@ -654,7 +795,7 @@ write_machine_info_key( const gchar  *key,
 static gboolean
 rcl_hostname_is_valid( const gchar *name )
 {
-  gsize len, i;
+  gsize len, i, label_len = 0;
 
   if( !name )
     return FALSE;
@@ -663,16 +804,29 @@ rcl_hostname_is_valid( const gchar *name )
   if( len == 0 || len > HOST_NAME_MAX )
     return FALSE;
 
-  if( name[0] == '.' || name[len - 1] == '.' )
-    return FALSE;
-
+  /* RFC 1123: labels of 1-63 [A-Za-z0-9-] characters, separated by single
+     dots, not starting or ending with '-'.  No leading/trailing/double dot. */
   for( i = 0; i < len; i++ )
   {
     gchar c = name[i];
-    if( !( g_ascii_isalnum(c) || c == '-' || c == '.' ) )
+
+    if( c == '.' )
+    {
+      if( label_len == 0 || name[i - 1] == '-' )
+        return FALSE;
+      label_len = 0;
+      continue;
+    }
+
+    if( !( g_ascii_isalnum( c ) || c == '-' ) )
+      return FALSE;
+    if( c == '-' && label_len == 0 )
+      return FALSE;
+    if( ++label_len > 63 )
       return FALSE;
   }
-  return TRUE;
+
+  return label_len > 0 && name[len - 1] != '-';
 }
 
 /* --------------------------------------------------------------------------
@@ -698,8 +852,12 @@ rcl_derive_pretty_hostname( const gchar *name )
   if( !dot )
     return g_strdup( name );
 
-  /* Looks like an FQDN/static hostname rather than a human label –
-     keep only the leading segment. */
+  /* Only treat it as an FQDN/static hostname (and keep the leading label)
+     when the whole string is a valid hostname.  A deliberate human label
+     such as "Bob's PC v2.0" is left untouched. */
+  if( !rcl_hostname_is_valid( name ) )
+    return g_strdup( name );
+
   return g_strndup( name, (gsize)(dot - name) );
 }
 
@@ -915,16 +1073,61 @@ do_set_machine_info( RclHostnameDaemon *daemon, const gchar *key,
   g_dbus_method_invocation_return_value( invocation, NULL );
 }
 
+/* Parse "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" into 16 raw bytes.  Returns
+   FALSE for malformed input and for the all-zero / all-0xFF placeholder
+   UUIDs firmware uses to mean "not set". */
+static gboolean
+parse_uuid_bytes( const gchar *str, guchar out[16] )
+{
+  gsize   n = 0;
+  gint    hi = -1;
+  guchar  or_all = 0, and_all = 0xff;
+
+  for( ; *str; str++ )
+  {
+    gint v;
+
+    if( *str == '-' )
+      continue;
+    v = g_ascii_xdigit_value( *str );
+    if( v < 0 )
+      return FALSE;
+    if( hi < 0 )
+      hi = v;
+    else
+    {
+      if( n >= 16 )
+        return FALSE;
+      out[n] = (guchar)( ( hi << 4 ) | v );
+      or_all  |= out[n];
+      and_all &= out[n];
+      n++;
+      hi = -1;
+    }
+  }
+
+  return n == 16 && hi < 0 && or_all != 0 && and_all != 0xff;
+}
+
 static void
 do_get_product_uuid( GDBusMethodInvocation *invocation )
 {
   gchar          *uuid_str = read_dmi( RCL_DMI_PRODUCT_UUID );
+  guchar          raw[16];
   GVariantBuilder bytes;
 
-  g_variant_builder_init( &bytes, G_VARIANT_TYPE("ay") );
-  for( gsize i = 0; uuid_str[i]; i++ )
-    g_variant_builder_add( &bytes, "y", (guchar)uuid_str[i] );
+  if( !parse_uuid_bytes( uuid_str, raw ) )
+  {
+    g_free( uuid_str );
+    g_dbus_method_invocation_return_error( invocation,
+      G_IO_ERROR, G_IO_ERROR_NOT_FOUND, "Product UUID is not available" );
+    return;
+  }
   g_free( uuid_str );
+
+  g_variant_builder_init( &bytes, G_VARIANT_TYPE("ay") );
+  for( gsize i = 0; i < 16; i++ )
+    g_variant_builder_add( &bytes, "y", raw[i] );
 
   g_dbus_method_invocation_return_value( invocation,
     g_variant_new("(ay)", &bytes) );
@@ -933,7 +1136,24 @@ do_get_product_uuid( GDBusMethodInvocation *invocation )
 static void
 do_get_hardware_serial( GDBusMethodInvocation *invocation )
 {
-  gchar *serial = read_dmi( RCL_DMI_CHASSIS_SERIAL );
+  gchar *prod_s  = read_dmi( RCL_DMI_PRODUCT_SERIAL );
+  gchar *board_s = read_dmi( RCL_DMI_BOARD_SERIAL );
+  gchar *chas_s  = read_dmi( RCL_DMI_CHASSIS_SERIAL );
+  /* Retail boards commonly leave "Default string" / "System Serial Number"
+     in some of these; use the first one that holds a real value. */
+  gchar *serial  = first_usable_dup( prod_s, board_s, chas_s );
+
+  g_free( prod_s ); g_free( board_s ); g_free( chas_s );
+
+  /* No usable DMI serial (e.g. ARM boards such as the Raspberry Pi): use the
+     device-tree serial-number property. */
+  if( serial[0] == '\0' )
+  {
+    gchar *dt_s = read_dt_string( RCL_DT_SERIAL );
+    g_free( serial );
+    serial = first_usable_dup( dt_s, NULL, NULL );
+    g_free( dt_s );
+  }
   g_dbus_method_invocation_return_value( invocation,
     g_variant_new("(s)", serial) );
   g_free( serial );
@@ -961,9 +1181,18 @@ on_check_done( GObject *source, GAsyncResult *res, gpointer user_data )
 
   if( !polkit_authorization_result_get_is_authorized( result ) )
   {
-    g_dbus_method_invocation_return_error( ctx->invocation,
-      G_DBUS_ERROR, G_DBUS_ERROR_AUTH_FAILED,
-      "Not authorised to perform the requested action" );
+    /* is_challenge: authentication is possible but the caller passed
+       interactive=FALSE.  Tell the client to retry with interactive=TRUE
+       (so a GUI can raise an agent dialog) rather than reporting a hard
+       denial. */
+    if( polkit_authorization_result_get_is_challenge( result ) )
+      g_dbus_method_invocation_return_dbus_error( ctx->invocation,
+        "org.freedesktop.DBus.Error.InteractiveAuthorizationRequired",
+        "Authentication is required to perform the requested action" );
+    else
+      g_dbus_method_invocation_return_error( ctx->invocation,
+        G_DBUS_ERROR, G_DBUS_ERROR_AUTH_FAILED,
+        "Not authorised to perform the requested action" );
     g_object_unref( result );
     auth_ctx_free( ctx );
     return;

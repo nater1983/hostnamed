@@ -2,7 +2,45 @@ NEWS
 ====
 
 This file summarizes user-visible changes to hostnamed, most recent first.
-See CHANGELOG.md for the full commit-level history.
+See the NEWS file for the full changelog.
+
+0.3.0 (2026-10-14)
+------------------
+* BUILD CHANGE: polkit is now required. The -Dpolkit option is gone;
+  remove it from any meson setup command line or packaging script.
+* Hostname validation is stricter (RFC 1123): labels over 63
+  characters, empty labels such as "a..b", and labels beginning or
+  ending with "-" are now rejected.
+* GetProductUUID now returns 16 raw bytes like systemd-hostnamed
+  (it previously returned the 36 ASCII characters of the textual
+  UUID). Clients that parsed the old form must be updated. It now
+  returns an error instead of an empty array when no UUID exists.
+* Fixed spurious PropertiesChanged signals for Chassis and IconName
+  on every file change.
+* IconName is derived from the effective chassis, so a CHASSIS value
+  in /etc/machine-info now selects the matching icon.
+* DefaultHostname is now populated and HostnameSource can report
+  "default".
+* SetPrettyHostname only shortens a value to its first label when the
+  value is a valid hostname; free-form labels containing dots are
+  kept intact.
+* Hardware information falls back to the device tree on systems
+  without DMI (HardwareModel, HardwareVendor, Chassis).
+* HardwareVendor and HardwareModel now skip empty and placeholder
+  DMI strings ("System manufacturer", "System Product Name", "To Be
+  Filled By O.E.M.", ...) and fall back from sys_vendor/product_name
+  to board_vendor/board_name, so desktop boards that only fill in
+  the baseboard record report their real vendor and model.
+* GetHardwareSerial returns the first usable of product_serial,
+  board_serial and chassis_serial instead of chassis_serial only,
+  skipping placeholder values such as "Default string" and
+  "System Serial Number". On systems without DMI it falls back to
+  the device-tree serial-number property.
+* Chassis detection recognises server, embedded and mini-PC
+  SMBIOS types; slack/hostnamectl uses the same table.
+* Authorization that needs interactive authentication now fails with
+  org.freedesktop.DBus.Error.InteractiveAuthorizationRequired so
+  clients can retry with interactive=true.
 
 0.2.6 (2026-06-20)
 -----------------------
@@ -58,7 +96,7 @@ See CHANGELOG.md for the full commit-level history.
 BUGS
 ====
 
-Known issues and limitations as of the Unreleased version above.
+Known issues and limitations as of version 0.3.0.
 Please report new issues at https://github.com/nater1983/hostnamed/issues
 
 * GetProductUUID and GetHardwareSerial default to the auth_admin
@@ -91,3 +129,35 @@ Please report new issues at https://github.com/nater1983/hostnamed/issues
   subject's next login/session start, consistent with how PolKit
   group subjects are evaluated; this is expected behavior but has
   surprised testers expecting it to apply live.
+* Chassis is never reported as "vm" or "container": no virtualization
+  detection is performed, only machine-info, SMBIOS and device-tree
+  chassis information.
+* The placeholder list is a fixed set of known strings; a board
+  that reports some other unfilled template text will still show
+  that text. product_version is deliberately not consulted, because
+  on many systems it holds a revision rather than a model name.
+* On platforms with a device tree, HardwareVendor is the lowercase
+  vendor prefix of the "compatible" property (e.g. "raspberrypi"),
+  not a marketing name, and many boards provide no chassis-type, in
+  which case Chassis stays empty.
+* After the D-Bus name is lost the daemon tries to re-acquire it, but
+  the startup path is not idempotent and the shared system-bus
+  connection exits the process on close by default, so recovery from
+  a dbus-daemon restart is not reliable; run hostnamed under a
+  supervisor. (Not yet reproduced; based on code review.)
+* /etc/machine-info is re-read and re-parsed several times per
+  resync, only double-quoted values are understood, and the first
+  matching key wins rather than the last.
+* hostnamectl creates /etc/machine-info through mktemp, leaving it
+  mode 0600 until chmod'd, and "hostnamectl set-hostname" overwrites
+  PRETTY_HOSTNAME with the short name. The chassis case tables in
+  hostnamectl must be kept in sync with the daemon by hand.
+* hostnamed calls sethostname() with the full value of /etc/HOSTNAME.
+  Slackware's rc.S is believed to use only the short name (text
+  before the first dot) for the kernel hostname; verify against the
+  installed rc.S if you use a fully qualified /etc/HOSTNAME.
+* The daemon never calls bindtextdomain(), so translations under po/
+  are not loaded by hostnamed itself.
+* hostnamed.SlackBuild defaults VERSION to "2026_master.3" rather
+  than the meson project version and copies a "BUG-NEWS" file that is
+  actually named BUGS-NEWS (the failure is hidden by "|| true").
