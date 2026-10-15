@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # hostnamectl - control the system hostname
-# Slackware implementation - writes files directly.
-# hostnamed picks up changes via inotify and updates D-Bus properties.
+# Slackware implementation - changes are sent to hostnamed over D-Bus.
+# The daemon authorizes requests and owns all system configuration writes.
 #
 # Copyright 2025, GPLv2+
 
@@ -25,13 +25,17 @@ die() {
   exit 1
 }
 
-require_root() {
-  [ "$EUID" -ne 0 ] && die "must be root to change hostname settings"
-  return 0
+dbus_set() {
+  local method="$1"
+  shift
+  command -v gdbus >/dev/null 2>&1 || die "gdbus is required to change hostname settings"
+  gdbus call --system \
+    --dest org.freedesktop.hostname1 \
+    --object-path /org/freedesktop/hostname1 \
+    --method "org.freedesktop.hostname1.${method}" "$@" true >/dev/null \
+    || die "D-Bus method ${method} failed"
 }
 
-# Reject control characters (including newline/tab/CR), double-quote, and
-# backslash — mirrors rcl_machine_info_value_is_safe() in the daemon.
 validate_meta_value() {
   local value="$1" key="$2"
   if printf '%s' "$value" | grep -qP '[\x00-\x1f\x7f"\\]'; then
@@ -73,65 +77,6 @@ first_usable() {
 
 machine_info_get() {
   grep "^${1}=" "$MACHINE_INFO_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' || true
-}
-
-# Atomically write or remove a KEY="value" entry in /etc/machine-info.
-# Passing an empty value removes the key entirely.
-machine_info_set() {
-  local key="$1"
-  local value="$2"
-  local tmp
-
-  touch "$MACHINE_INFO_FILE" 2>/dev/null || die "cannot write $MACHINE_INFO_FILE"
-
-  tmp=$(mktemp "${MACHINE_INFO_FILE}.XXXXXX") || die "cannot create temp file"
-
-  grep -v "^${key}=" "$MACHINE_INFO_FILE" > "$tmp" 2>/dev/null || true
-
-  if [ -n "$value" ]; then
-    echo "${key}=\"${value}\"" >> "$tmp"
-  fi
-
-  mv "$tmp" "$MACHINE_INFO_FILE" || { rm -f "$tmp"; die "cannot update $MACHINE_INFO_FILE"; }
-}
-
-# Write out a fully populated /etc/machine-info from detected values.
-# Called automatically if the file does not exist yet.
-# An existing file is never overwritten by this function.
-init_machine_info() {
-  [ -f "$MACHINE_INFO_FILE" ] && return
-
-  local chassis icon pretty
-  local ct
-  ct=$(dmi_read chassis_type)
-  case "$ct" in
-    3|4|5|6|7|13|15|16|24|35|36) chassis="desktop";     icon="computer-desktop" ;;
-    8|9|10|14)  chassis="laptop";      icon="computer-laptop"  ;;
-    11)         chassis="handset";     icon="phone"            ;;
-    17|23|25|28|29) chassis="server";  icon="computer-server"  ;;
-    30|32)      chassis="tablet";      icon="computer-tablet"  ;;
-    31)         chassis="convertible"; icon="computer-laptop"  ;;
-    33|34)      chassis="embedded";    icon="computer"         ;;
-    *)          chassis="";            icon="computer"         ;;
-  esac
-
-  # Use the static hostname as the initial pretty hostname
-  pretty=$(cat "$HOSTNAME_FILE" 2>/dev/null | tr -d '[:space:]' | cut -d. -f1)
-
-  local tmp
-  tmp=$(mktemp "${MACHINE_INFO_FILE}.XXXXXX") || return
-
-  cat > "$tmp" << 'EOF'
-# /etc/machine-info - see machine-info(5)
-EOF
-  printf 'PRETTY_HOSTNAME="%s"\n' "$pretty" >> "$tmp"
-  printf 'ICON_NAME="%s"\n'       "$icon"   >> "$tmp"
-  printf 'CHASSIS="%s"\n'         "$chassis" >> "$tmp"
-  printf 'DEPLOYMENT=""\n'                   >> "$tmp"
-  printf 'LOCATION=""\n'                     >> "$tmp"
-
-  mv "$tmp" "$MACHINE_INFO_FILE" || rm -f "$tmp"
-  echo "Created $MACHINE_INFO_FILE"
 }
 
 detect_chassis() {
@@ -264,12 +209,8 @@ cmd_status() {
 # ---------------------------------------------------------------------------
 
 cmd_set_hostname() {
-  require_root
-
-  local mode
-  local name
-  mode="all"
-  name=""
+  local mode="all"
+  local name=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -287,26 +228,20 @@ cmd_set_hostname() {
   if [ "$mode" != "pretty" ]; then
     echo "$name" | grep -qE '^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?))*$' \
       || die "invalid hostname '$name'"
+  else
+    validate_meta_value "$name" "PRETTY_HOSTNAME"
   fi
 
   case "$mode" in
-    static)
-      echo "$name" > "$HOSTNAME_FILE" || die "cannot write $HOSTNAME_FILE"
-      ;;
-    transient)
-      hostname "$name" || die "cannot set transient hostname"
-      ;;
-    pretty)
-      validate_meta_value "$name" "PRETTY_HOSTNAME"
-      machine_info_set "PRETTY_HOSTNAME" "$name"
-      ;;
+    static)    dbus_set SetStaticHostname "$name" ;;
+    transient) dbus_set SetHostname "$name" ;;
+    pretty)    dbus_set SetPrettyHostname "$name" ;;
     all)
-      echo "$name" > "$HOSTNAME_FILE" || die "cannot write $HOSTNAME_FILE"
-      hostname "$name" || die "cannot set transient hostname"
-      # Update pretty hostname to the short name (strip domain)
+      dbus_set SetStaticHostname "$name"
+      dbus_set SetHostname "$name"
       local short
       short=$(echo "$name" | cut -d. -f1)
-      machine_info_set "PRETTY_HOSTNAME" "$short"
+      dbus_set SetPrettyHostname "$short"
       ;;
   esac
 
@@ -318,10 +253,9 @@ cmd_set_hostname() {
 # ---------------------------------------------------------------------------
 
 cmd_set_icon_name() {
-  require_root
   [ -z "${1:-}" ] && die "no icon name given"
   validate_meta_value "$1" "ICON_NAME"
-  machine_info_set "ICON_NAME" "$1"
+  dbus_set SetIconName "$1"
   echo "Icon name set to '$1'."
 }
 
@@ -330,7 +264,6 @@ cmd_set_icon_name() {
 # ---------------------------------------------------------------------------
 
 cmd_set_chassis() {
-  require_root
   [ -z "${1:-}" ] && die "no chassis type given"
 
   local valid=0
@@ -339,7 +272,7 @@ cmd_set_chassis() {
   done
   [ $valid -eq 0 ] && die "invalid chassis '$1'. Valid: ${VALID_CHASSIS[*]}"
 
-  machine_info_set "CHASSIS" "$1"
+  dbus_set SetChassis "$1"
   echo "Chassis set to '$1'."
 }
 
@@ -348,10 +281,9 @@ cmd_set_chassis() {
 # ---------------------------------------------------------------------------
 
 cmd_set_deployment() {
-  require_root
   [ -z "${1:-}" ] && die "no deployment environment given"
   validate_meta_value "$1" "DEPLOYMENT"
-  machine_info_set "DEPLOYMENT" "$1"
+  dbus_set SetDeployment "$1"
   echo "Deployment set to '$1'."
 }
 
@@ -360,10 +292,9 @@ cmd_set_deployment() {
 # ---------------------------------------------------------------------------
 
 cmd_set_location() {
-  require_root
   [ -z "${1:-}" ] && die "no location given"
   validate_meta_value "$1" "LOCATION"
-  machine_info_set "LOCATION" "$1"
+  dbus_set SetLocation "$1"
   echo "Location set to '$1'."
 }
 
@@ -389,9 +320,8 @@ Commands:
 Options:
   -h, --help                               Show this help
 
-Note: Changes are written directly to /etc/HOSTNAME and /etc/machine-info.
-      hostnamed picks them up via inotify and updates D-Bus properties
-      automatically.
+Note: Changes are sent to hostnamed over the system D-Bus. Polkit controls
+      authorization; hostnamed writes the configuration files.
 EOF
 }
 
@@ -401,11 +331,6 @@ EOF
 
 COMMAND="${1:-status}"
 shift 2>/dev/null || true
-
-# Bootstrap /etc/machine-info on first run
-if [ ! -f "$MACHINE_INFO_FILE" ] && [ "$EUID" -eq 0 ]; then
-  init_machine_info
-fi
 
 case "$COMMAND" in
   status)          cmd_status         "$@" ;;
