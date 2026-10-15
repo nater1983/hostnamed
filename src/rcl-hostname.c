@@ -772,6 +772,34 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
   }
 }
 
+/* Make a directory-entry change durable after unlink/rename. */
+static gboolean
+sync_parent_directory (const gchar *path, GError **error)
+{
+  gchar *dir = g_path_get_dirname (path);
+  int dirfd = open (dir, O_RDONLY | O_DIRECTORY);
+  int saved_errno = 0;
+
+  if (dirfd < 0)
+    saved_errno = errno;
+  else if (fsync (dirfd) != 0)
+    saved_errno = errno;
+
+  if (dirfd >= 0 && close (dirfd) != 0 && saved_errno == 0)
+    saved_errno = errno;
+
+  if (saved_errno != 0) {
+    g_set_error (error, G_IO_ERROR, g_io_error_from_errno (saved_errno),
+                 "sync directory %s for %s: %s",
+                 dir, path, g_strerror (saved_errno));
+    g_free (dir);
+    return FALSE;
+  }
+
+  g_free (dir);
+  return TRUE;
+}
+
 /* Replace a configuration file atomically. Existing ownership and mode are
  * retained; newly-created files are root:root 0644. The destination is not
  * touched unless the complete temporary file has been written and synced. */
@@ -861,24 +889,9 @@ atomic_replace_file (const gchar *path, const gchar *contents, gsize length,
     goto out;
   }
 
-  /* Persist the directory entry as well as the file contents so the rename
-   * survives a sudden power loss on filesystems that support directory fsync. */
-  {
-    gchar *dir = g_path_get_dirname (path);
-    int dirfd = open (dir, O_RDONLY | O_DIRECTORY);
-    if (dirfd < 0 || fsync (dirfd) != 0) {
-      int saved_errno = errno;
-      if (dirfd >= 0)
-        close (dirfd);
-      g_set_error (error, G_IO_ERROR, g_io_error_from_errno (saved_errno),
-                   "sync directory %s after replacing %s: %s",
-                   dir, path, g_strerror (saved_errno));
-      g_free (dir);
-      goto out;
-    }
-    close (dirfd);
-    g_free (dir);
-  }
+  /* Persist the rename along with the file contents. */
+  if (!sync_parent_directory (path, error))
+    goto out;
 
   ok = TRUE;
   goto out;
@@ -1226,12 +1239,18 @@ do_set_static_hostname (RclHostnameDaemon *daemon, const gchar *name,
         rolled_back = atomic_replace_file (RCL_HOSTNAME_FILE, old_contents,
                                            old_length, &rollback_error);
       } else {
-        rolled_back = g_unlink (RCL_HOSTNAME_FILE) == 0 || errno == ENOENT;
-        if (!rolled_back)
+        if (g_unlink (RCL_HOSTNAME_FILE) == 0)
+          rolled_back = sync_parent_directory (RCL_HOSTNAME_FILE,
+                                               &rollback_error);
+        else if (errno == ENOENT)
+          rolled_back = TRUE;
+        else {
+          rolled_back = FALSE;
           g_set_error (&rollback_error, G_IO_ERROR,
                        g_io_error_from_errno (errno),
                        "remove newly created %s: %s",
                        RCL_HOSTNAME_FILE, g_strerror (errno));
+        }
       }
 
       if (!rolled_back) {
@@ -1252,7 +1271,15 @@ do_set_static_hostname (RclHostnameDaemon *daemon, const gchar *name,
 
     g_free (old_contents);
   } else {
-    if (g_unlink (RCL_HOSTNAME_FILE) != 0 && errno != ENOENT) {
+    if (g_unlink (RCL_HOSTNAME_FILE) == 0) {
+      if (!sync_parent_directory (RCL_HOSTNAME_FILE, &error)) {
+        g_dbus_method_invocation_return_dbus_error (invocation,
+          "org.freedesktop.DBus.Error.Failed",
+          error ? error->message : "Failed to sync static hostname directory");
+        g_clear_error (&error);
+        return;
+      }
+    } else if (errno != ENOENT) {
       g_dbus_method_invocation_return_error (invocation, G_IO_ERROR,
         g_io_error_from_errno (errno), "Cannot remove static hostname file %s: %s",
         RCL_HOSTNAME_FILE, g_strerror (errno));
