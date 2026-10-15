@@ -772,6 +772,15 @@ write_machine_info_key( const gchar  *key,
   tmp_path = g_strdup( RCL_MACHINE_INFO_FILE ".tmp" );
   ok = g_file_set_contents( tmp_path, out->str, (gssize)out->len, error );
 
+  /* g_file_set_contents() creates its temporary file with restrictive
+     permissions.  Set the intended public configuration mode before rename. */
+  if( ok && g_chmod( tmp_path, 0644 ) != 0 )
+  {
+    g_set_error( error, G_IO_ERROR, g_io_error_from_errno(errno),
+                 "chmod(%s, 0644): %s", tmp_path, g_strerror(errno) );
+    ok = FALSE;
+  }
+
   if( ok )
   {
     if( g_rename( tmp_path, RCL_MACHINE_INFO_FILE ) != 0 )
@@ -1017,6 +1026,16 @@ do_set_static_hostname( RclHostnameDaemon *daemon, const gchar *name,
       return;
     }
     g_free( content );
+
+    /* Keep the static hostname file readable by unprivileged clients. */
+    if( g_chmod( RCL_HOSTNAME_FILE, 0644 ) != 0 )
+    {
+      g_dbus_method_invocation_return_error( invocation,
+        G_IO_ERROR, g_io_error_from_errno(errno),
+        "chmod(%s, 0644) failed: %s",
+        RCL_HOSTNAME_FILE, g_strerror(errno) );
+      return;
+    }
 
     if( sethostname( name, strlen(name) ) != 0 )
       g_warning( "sethostname(%s) failed: %s", name, g_strerror(errno) );
