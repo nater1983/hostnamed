@@ -1016,21 +1016,20 @@ static void
 do_set_hostname( RclHostnameDaemon *daemon, const gchar *name,
                  GDBusMethodInvocation *invocation )
 {
-  if( name && name[0] != '\0' )
+  if( name && name[0] != '\0' && !rcl_hostname_is_valid( name ) )
   {
-    if( !rcl_hostname_is_valid( name ) )
-    {
-      g_dbus_method_invocation_return_error( invocation,
-        G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Invalid hostname '%s'", name );
-      return;
-    }
-    if( sethostname( name, strlen(name) ) != 0 )
-    {
-      g_dbus_method_invocation_return_error( invocation,
-        G_IO_ERROR, g_io_error_from_errno(errno),
-        "sethostname failed: %s", g_strerror(errno) );
-      return;
-    }
+    g_dbus_method_invocation_return_error( invocation,
+      G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Invalid hostname '%s'", name );
+    return;
+  }
+
+  /* An empty transient hostname explicitly clears the kernel hostname. */
+  if( sethostname( name ? name : "", name ? strlen(name) : 0 ) != 0 )
+  {
+    g_dbus_method_invocation_return_error( invocation,
+      G_IO_ERROR, g_io_error_from_errno(errno),
+      "sethostname failed: %s", g_strerror(errno) );
+    return;
   }
 
   rcl_daemon_sync_dbus_properties( daemon );
@@ -1519,7 +1518,15 @@ handle_method_call( GDBusConnection       *connection,
   }
 
   /* ---- sensitive hardware reads ---- */
-  if( g_strcmp0(method_name, "GetHardwareSerial") == 0 ) { do_get_hardware_serial(invocation); return; }
+  if( g_strcmp0(method_name, "GetHardwareSerial") == 0 )
+  {
+    ctx = g_new0(AuthCtx, 1);
+    ctx->daemon = g_object_ref(daemon);
+    ctx->invocation = invocation;
+    ctx->op = OP_GET_HARDWARE_SERIAL;
+    check_polkit_async(ctx, RCL_HOSTNAME_POLKIT_GET_HARDWARE_SERIAL, FALSE);
+    return;
+  }
   if( g_strcmp0(method_name, "GetProductUUID") == 0 )
   {
     gboolean interactive;
