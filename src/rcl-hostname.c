@@ -846,6 +846,26 @@ atomic_replace_file (const gchar *path, const gchar *contents, gsize length,
                  "rename temporary file to %s: %s", path, g_strerror (errno));
     goto out;
   }
+
+  /* Persist the directory entry as well as the file contents so the rename
+   * survives a sudden power loss on filesystems that support directory fsync. */
+  {
+    gchar *dir = g_path_get_dirname (path);
+    int dirfd = open (dir, O_RDONLY | O_DIRECTORY);
+    if (dirfd < 0 || fsync (dirfd) != 0) {
+      int saved_errno = errno;
+      if (dirfd >= 0)
+        close (dirfd);
+      g_set_error (error, G_IO_ERROR, g_io_error_from_errno (saved_errno),
+                   "sync directory %s after replacing %s: %s",
+                   dir, path, g_strerror (saved_errno));
+      g_free (dir);
+      goto out;
+    }
+    close (dirfd);
+    g_free (dir);
+  }
+
   ok = TRUE;
   goto out;
 
