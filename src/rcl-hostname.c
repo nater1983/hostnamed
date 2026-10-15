@@ -1169,9 +1169,12 @@ do_set_hostname( RclHostnameDaemon *daemon, const gchar *name,
   /* An empty transient hostname explicitly clears the kernel hostname. */
   if( sethostname( name ? name : "", name ? strlen(name) : 0 ) != 0 )
   {
-    g_dbus_method_invocation_return_dbus_error( invocation,
-      "org.freedesktop.DBus.Error.Failed",
-      g_strdup_printf("sethostname failed: %s", g_strerror(errno)) );
+    {
+      gchar *message = g_strdup_printf ("sethostname failed: %s", g_strerror (errno));
+      g_dbus_method_invocation_return_dbus_error (invocation,
+        "org.freedesktop.DBus.Error.Failed", message);
+      g_free (message);
+    }
     return;
   }
 
