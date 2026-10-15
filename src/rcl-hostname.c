@@ -772,67 +772,6 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
   }
 }
 
-/* --------------------------------------------------------------------------
-   Direct property cache update
-
-   Forces priv-> for a given machine-info key to the value we just wrote to
-   disk and emits PropertiesChanged for it immediately.  Used by the Set*
-   method handlers right after a successful write, so the in-memory cache
-   is guaranteed correct even if a concurrent inotify-triggered resync (or
-   any other resync) interleaves and re-reads the file in a stale or
-   torn state.
-   -------------------------------------------------------------------------- */
-static void
-rcl_daemon_force_machine_info_property( RclHostnameDaemon *daemon,
-                                        const gchar       *key,
-                                        const gchar       *new_value )
-{
-  RclHostnameDaemonPrivate *priv = daemon->priv;
-  gchar      **field      = NULL;
-  const gchar *dbus_name  = NULL;
-
-  if     ( g_strcmp0(key, "PRETTY_HOSTNAME") == 0 ) { field = &priv->pretty_hostname; dbus_name = "PrettyHostname"; }
-  else if( g_strcmp0(key, "ICON_NAME")       == 0 ) { field = &priv->icon_name;       dbus_name = "IconName"; }
-  else if( g_strcmp0(key, "CHASSIS")         == 0 ) { field = &priv->chassis;         dbus_name = "Chassis"; }
-  else if( g_strcmp0(key, "DEPLOYMENT")      == 0 ) { field = &priv->deployment;      dbus_name = "Deployment"; }
-  else if( g_strcmp0(key, "LOCATION")        == 0 ) { field = &priv->location;        dbus_name = "Location"; }
-
-  if( !field )
-    return;
-
-  g_free( *field );
-  *field = g_strdup( new_value ? new_value : "" );
-
-  if( priv->connection && priv->registration_id > 0 )
-  {
-    GVariantBuilder changed_props;
-    GError *err = NULL;
-
-    g_variant_builder_init( &changed_props, G_VARIANT_TYPE("a{sv}") );
-    g_variant_builder_add( &changed_props, "{sv}", dbus_name,
-                           g_variant_new_string( *field ) );
-
-    g_dbus_connection_emit_signal(
-      priv->connection,
-      NULL,
-      "/org/freedesktop/hostname1",
-      "org.freedesktop.DBus.Properties",
-      "PropertiesChanged",
-      g_variant_new( "(sa{sv}as)",
-                     "org.freedesktop.hostname1",
-                     &changed_props,
-                     NULL ),
-      &err );
-
-    if( err )
-    {
-      g_warning( "PropertiesChanged emission failed for %s: %s",
-                dbus_name, err->message );
-      g_error_free( err );
-    }
-  }
-}
-
 /* Replace a configuration file atomically. Existing ownership and mode are
  * retained; newly-created files are root:root 0644. The destination is not
  * touched unless the complete temporary file has been written and synced. */
@@ -842,8 +781,19 @@ atomic_replace_file (const gchar *path, const gchar *contents, gsize length,
 {
   gchar *tmp_path = g_strdup_printf ("%s.XXXXXX", path);
   struct stat st;
-  gboolean existed = (g_stat (path, &st) == 0);
-  int fd = g_mkstemp (tmp_path);
+  gboolean existed;
+  int fd;
+  if (g_stat (path, &st) == 0) {
+    existed = TRUE;
+  } else if (errno == ENOENT) {
+    existed = FALSE;
+  } else {
+    g_set_error (error, G_IO_ERROR, g_io_error_from_errno (errno),
+                 "stat(%s): %s", path, g_strerror (errno));
+    g_free (tmp_path);
+    return FALSE;
+  }
+  fd = g_mkstemp (tmp_path);
   gboolean ok = FALSE;
   gsize written = 0;
 
@@ -1265,11 +1215,10 @@ do_set_machine_info( RclHostnameDaemon *daemon, const gchar *key,
     return;
   }
 
-  /* Run the generic resync first, then force this specific field to exactly
-     what we just wrote so a concurrent inotify-triggered resync reading a
-     stale/interleaved file cannot clobber the authoritative value. */
+  /* The file has been committed successfully. Refreshing the cache compares
+     old and new values and emits exactly one PropertiesChanged signal only
+     when the externally visible value actually changed. */
   rcl_daemon_sync_dbus_properties( daemon );
-  rcl_daemon_force_machine_info_property( daemon, key, name );
 
   g_free( sanitised );
   g_dbus_method_invocation_return_value( invocation, NULL );
