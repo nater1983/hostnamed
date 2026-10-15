@@ -47,6 +47,12 @@ install_data(
   install_dir : dbus_conf_dir,
 )
 
+# Install the public interface description for client/tooling introspection.
+install_data(
+  'org.freedesktop.hostname1.xml',
+  install_dir : join_paths(prefix, datadir, 'dbus-1', 'interfaces'),
+)
+
 install_data(
   'org.freedesktop.hostname1.policy',
   install_dir : polkit_policy_dir,
