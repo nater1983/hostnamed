@@ -618,7 +618,7 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
                    "OperatingSystemPrettyName" );
 
   UPDATE_STR_PROP( os_fancy_name,
-                   read_key_value_file( RCL_OS_RELEASE_FILE, "NAME" ),
+                   read_key_value_file( RCL_OS_RELEASE_FILE, "FANCY_NAME" ),
                    "OperatingSystemFancyName" );
 
   UPDATE_STR_PROP( os_cpe_name,
