@@ -29,12 +29,12 @@ dbus_set() {
   local method="$1"
   local value="$2"
 
-  command -v busctl >/dev/null 2>&1 || die "busctl is required to change hostname settings"
-  busctl --system call \
-    org.freedesktop.hostname1 \
-    /org/freedesktop/hostname1 \
-    org.freedesktop.hostname1 \
-    "$method" sb "$value" true >/dev/null \
+  command -v gdbus >/dev/null 2>&1 || die "gdbus is required to change hostname settings"
+  gdbus call --system \
+    --dest org.freedesktop.hostname1 \
+    --object-path /org/freedesktop/hostname1 \
+    --method "org.freedesktop.hostname1.$method" \
+    "$value" true >/dev/null \
     || die "D-Bus method $method failed"
 }
 
