@@ -23,7 +23,10 @@
 #define _GNU_SOURCE   /* for timegm(3) */
 #include <errno.h>
 #include <limits.h>
+#include <fcntl.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/utsname.h>
 #include <time.h>
 #include <unistd.h>
@@ -830,6 +833,82 @@ rcl_daemon_force_machine_info_property( RclHostnameDaemon *daemon,
   }
 }
 
+/* Replace a configuration file atomically. Existing ownership and mode are
+ * retained; newly-created files are root:root 0644. The destination is not
+ * touched unless the complete temporary file has been written and synced. */
+static gboolean
+atomic_replace_file (const gchar *path, const gchar *contents, gsize length,
+                     GError **error)
+{
+  gchar *tmp_path = g_strdup_printf ("%s.XXXXXX", path);
+  struct stat st;
+  gboolean existed = (g_stat (path, &st) == 0);
+  int fd = g_mkstemp (tmp_path);
+  gboolean ok = FALSE;
+  gsize written = 0;
+
+  if (fd < 0) {
+    g_set_error (error, G_IO_ERROR, g_io_error_from_errno (errno),
+                 "create temporary file for %s: %s", path, g_strerror (errno));
+    goto out;
+  }
+
+  if (existed && fchown (fd, st.st_uid, st.st_gid) != 0) {
+    g_set_error (error, G_IO_ERROR, g_io_error_from_errno (errno),
+                 "preserve ownership for %s: %s", path, g_strerror (errno));
+    goto close_out;
+  }
+  if (fchmod (fd, existed ? (st.st_mode & 07777) : 0644) != 0) {
+    g_set_error (error, G_IO_ERROR, g_io_error_from_errno (errno),
+                 "set permissions for %s: %s", path, g_strerror (errno));
+    goto close_out;
+  }
+
+  while (written < length) {
+    ssize_t n = write (fd, contents + written, length - written);
+    if (n < 0 && errno == EINTR)
+      continue;
+    if (n <= 0) {
+      int saved_errno = n == 0 ? EIO : errno;
+      g_set_error (error, G_IO_ERROR, g_io_error_from_errno (saved_errno),
+                   "write temporary file for %s: %s",
+                   path, g_strerror (saved_errno));
+      goto close_out;
+    }
+    written += (gsize) n;
+  }
+
+  if (fsync (fd) != 0) {
+    g_set_error (error, G_IO_ERROR, g_io_error_from_errno (errno),
+                 "sync temporary file for %s: %s", path, g_strerror (errno));
+    goto close_out;
+  }
+  if (close (fd) != 0) {
+    fd = -1;
+    g_set_error (error, G_IO_ERROR, g_io_error_from_errno (errno),
+                 "close temporary file for %s: %s", path, g_strerror (errno));
+    goto out;
+  }
+  fd = -1;
+
+  if (g_rename (tmp_path, path) != 0) {
+    g_set_error (error, G_IO_ERROR, g_io_error_from_errno (errno),
+                 "rename temporary file to %s: %s", path, g_strerror (errno));
+    goto out;
+  }
+  ok = TRUE;
+  goto out;
+
+close_out:
+  if (fd >= 0)
+    close (fd);
+out:
+  if (!ok)
+    g_unlink (tmp_path);
+  g_free (tmp_path);
+  return ok;
+}
+
 /* --------------------------------------------------------------------------
    machine-info writer
 
@@ -843,90 +922,57 @@ rcl_daemon_force_machine_info_property( RclHostnameDaemon *daemon,
 static gboolean rcl_machine_info_value_is_safe( const gchar *value );
 
 static gboolean
-write_machine_info_key( const gchar  *key,
-                        const gchar  *value,
-                        GError      **error )
+write_machine_info_key (const gchar *key, const gchar *value, GError **error)
 {
-  gchar  *contents  = NULL;
+  gchar *contents = NULL;
   gchar **lines;
-  gsize   i;
   GString *out;
   gboolean found = FALSE;
-  gchar   *tmp_path;
-  gboolean ok;
+  gchar *prefix;
+  GError *read_error = NULL;
 
-  /* Defence in depth: never write a value we have not vetted ourselves, even
-     though every current caller already validates before calling us.  An
-     empty/NULL value means "remove the key" and is allowed. */
-  if( value && value[0] != '\0' && !rcl_machine_info_value_is_safe( value ) )
-  {
-    g_set_error( error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
-                 "Refusing to write unsafe value for %s", key );
+  /* Empty or NULL values remove the key. Refuse to rewrite the file if it
+   * exists but cannot be read: otherwise unrelated settings could be lost. */
+  if (value && value[0] != '\0' && !rcl_machine_info_value_is_safe (value)) {
+    g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
+                 "Refusing to write unsafe value for %s", key);
     return FALSE;
   }
 
-  /* Load existing file, tolerating absence */
-  g_file_get_contents( RCL_MACHINE_INFO_FILE, &contents, NULL, NULL );
-  lines = contents ? g_strsplit( contents, "\n", -1 )
-                   : g_new0( gchar *, 1 );
-  g_free( contents );
+  if (!g_file_get_contents (RCL_MACHINE_INFO_FILE, &contents, NULL, &read_error)) {
+    if (!g_error_matches (read_error, G_FILE_ERROR, G_FILE_ERROR_NOENT)) {
+      g_propagate_prefixed_error (error, read_error,
+                                  "Cannot read %s: ", RCL_MACHINE_INFO_FILE);
+      return FALSE;
+    }
+    g_clear_error (&read_error);
+  }
 
-  out = g_string_new( NULL );
-  gchar prefix[256];
-  g_snprintf( prefix, sizeof(prefix), "%s=", key );
+  lines = contents ? g_strsplit (contents, "\n", -1) : g_new0 (gchar *, 1);
+  g_free (contents);
+  out = g_string_new (NULL);
+  prefix = g_strdup_printf ("%s=", key);
 
-  for( i = 0; lines[i] != NULL; i++ )
-  {
-    if( lines[i][0] == '\0' ) continue; /* skip blank lines; we'll add a trailing newline */
-
-    if( g_str_has_prefix( lines[i], prefix ) )
-    {
-      /* Replace or remove this key */
-      if( value && value[0] != '\0' )
-        g_string_append_printf( out, "%s=\"%s\"\n", key, value );
+  for (gsize i = 0; lines[i] != NULL; i++) {
+    if (g_str_has_prefix (lines[i], prefix)) {
+      if (!found && value && value[0] != '\0')
+        g_string_append_printf (out, "%s=\"%s\"\n", key, value);
       found = TRUE;
-    }
-    else
-    {
-      g_string_append_printf( out, "%s\n", lines[i] );
-    }
-  }
-
-  /* Key wasn't present yet – append it */
-  if( !found && value && value[0] != '\0' )
-    g_string_append_printf( out, "%s=\"%s\"\n", key, value );
-
-  g_strfreev( lines );
-
-  /* Write atomically */
-  tmp_path = g_strdup( RCL_MACHINE_INFO_FILE ".tmp" );
-  ok = g_file_set_contents( tmp_path, out->str, (gssize)out->len, error );
-
-  /* g_file_set_contents() creates its temporary file with restrictive
-     permissions.  Set the intended public configuration mode before rename. */
-  if( ok && g_chmod( tmp_path, 0644 ) != 0 )
-  {
-    g_set_error( error, G_IO_ERROR, g_io_error_from_errno(errno),
-                 "chmod(%s, 0644): %s", tmp_path, g_strerror(errno) );
-    ok = FALSE;
-  }
-
-  if( ok )
-  {
-    if( g_rename( tmp_path, RCL_MACHINE_INFO_FILE ) != 0 )
-    {
-      g_set_error( error, G_IO_ERROR, g_io_error_from_errno(errno),
-                   "rename(%s, %s): %s", tmp_path,
-                   RCL_MACHINE_INFO_FILE, g_strerror(errno) );
-      ok = FALSE;
+    } else if (lines[i][0] != '\0') {
+      /* Preserve comments, unknown keys, and all unrelated entries. */
+      g_string_append_printf (out, "%s\n", lines[i]);
     }
   }
 
-  if( !ok )
-    g_unlink( tmp_path );
+  if (!found && value && value[0] != '\0')
+    g_string_append_printf (out, "%s=\"%s\"\n", key, value);
 
-  g_free( tmp_path );
-  g_string_free( out, TRUE );
+  g_strfreev (lines);
+  g_free (prefix);
+
+  gboolean ok = atomic_replace_file (RCL_MACHINE_INFO_FILE, out->str,
+                                     out->len, error);
+  g_string_free (out, TRUE);
   return ok;
 }
 
@@ -1137,66 +1183,51 @@ do_set_hostname( RclHostnameDaemon *daemon, const gchar *name,
 }
 
 static void
-do_set_static_hostname( RclHostnameDaemon *daemon, const gchar *name,
-                        GDBusMethodInvocation *invocation )
+do_set_static_hostname (RclHostnameDaemon *daemon, const gchar *name,
+                        GDBusMethodInvocation *invocation)
 {
-  if( name && name[0] != '\0' )
-  {
-    GError *error = NULL;
-    gchar  *content;
+  GError *error = NULL;
+  const gchar *hostname = name ? name : "";
 
-    if( !rcl_hostname_is_valid( name ) )
-    {
-      g_dbus_method_invocation_return_dbus_error( invocation,
-        "org.freedesktop.DBus.Error.InvalidArgs", "Invalid static hostname" );
-      return;
-    }
+  if (hostname[0] != '\0' && !rcl_hostname_is_valid (hostname)) {
+    g_dbus_method_invocation_return_dbus_error (invocation,
+      "org.freedesktop.DBus.Error.InvalidArgs", "Invalid static hostname");
+    return;
+  }
 
-    content = g_strdup_printf( "%s\n", name );
-    if( !g_file_set_contents( RCL_HOSTNAME_FILE, content, -1, &error ) )
-    {
-      g_free( content );
-      g_dbus_method_invocation_return_dbus_error( invocation,
+  if (hostname[0] != '\0') {
+    gchar *content = g_strdup_printf ("%s\n", hostname);
+    gboolean written = atomic_replace_file (RCL_HOSTNAME_FILE, content,
+                                            strlen (content), &error);
+    g_free (content);
+    if (!written) {
+      g_dbus_method_invocation_return_dbus_error (invocation,
         "org.freedesktop.DBus.Error.Failed",
-        error ? error->message : "Failed to write static hostname" );
-      g_clear_error( &error );
-      return;
-    }
-    g_free( content );
-
-    /* Keep the static hostname file readable by unprivileged clients. */
-    if( g_chmod( RCL_HOSTNAME_FILE, 0644 ) != 0 )
-    {
-      g_dbus_method_invocation_return_error( invocation,
-        G_IO_ERROR, g_io_error_from_errno(errno),
-        "chmod(%s, 0644) failed: %s",
-        RCL_HOSTNAME_FILE, g_strerror(errno) );
+        error ? error->message : "Failed to write static hostname");
+      g_clear_error (&error);
       return;
     }
 
-    if( sethostname( name, strlen(name) ) != 0 )
-    {
-      g_dbus_method_invocation_return_error( invocation,
-        G_IO_ERROR, g_io_error_from_errno(errno),
+    /* The persistent value is now committed. If updating the kernel fails,
+     * return an error rather than claiming the operation fully succeeded. */
+    if (sethostname (hostname, strlen (hostname)) != 0) {
+      g_dbus_method_invocation_return_error (invocation, G_IO_ERROR,
+        g_io_error_from_errno (errno),
         "sethostname(%s) failed after updating %s: %s",
-        name, RCL_HOSTNAME_FILE, g_strerror(errno) );
+        hostname, RCL_HOSTNAME_FILE, g_strerror (errno));
       return;
     }
-  }
-  else
-  {
-    if( g_unlink( RCL_HOSTNAME_FILE ) != 0 && errno != ENOENT )
-    {
-      g_dbus_method_invocation_return_error( invocation,
-        G_IO_ERROR, g_io_error_from_errno(errno),
-        "Cannot remove static hostname file %s: %s",
-        RCL_HOSTNAME_FILE, g_strerror(errno) );
+  } else {
+    if (g_unlink (RCL_HOSTNAME_FILE) != 0 && errno != ENOENT) {
+      g_dbus_method_invocation_return_error (invocation, G_IO_ERROR,
+        g_io_error_from_errno (errno), "Cannot remove static hostname file %s: %s",
+        RCL_HOSTNAME_FILE, g_strerror (errno));
       return;
     }
   }
 
-  rcl_daemon_sync_dbus_properties( daemon );
-  g_dbus_method_invocation_return_value( invocation, NULL );
+  rcl_daemon_sync_dbus_properties (daemon);
+  g_dbus_method_invocation_return_value (invocation, NULL);
 }
 
 static void
