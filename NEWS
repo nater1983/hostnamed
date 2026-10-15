@@ -4,6 +4,12 @@ All notable changes to `hostnamed` are documented in this file, derived from the
 
 ## [0.3.0] - 2026-10-14
 
+### Changed (D-Bus API, authorization, and persistence)
+- Marked immutable hostname1 properties with `EmitsChangedSignal=const` annotations in both the shipped interface XML and the daemon's embedded introspection XML.
+- Scoped the root polkit authorization bypass to `org.freedesktop.hostname1.*` actions; the rule no longer grants an unconditional success for unrelated actions.
+- Standardized hostname-operation failures on stable D-Bus error names and ensured property state is refreshed on persistence error paths, including failures that occur after a file replacement has already taken effect.
+- Kept hostname changes behind the daemon's D-Bus methods so polkit authorization is applied consistently and the daemon remains responsible for writing the system configuration files.
+
 ### Changed (hostnamectl)
 - Routed hostname-setting and machine-info changes through the system D-Bus `org.freedesktop.hostname1` methods instead of direct writes by the shell client. The daemon now owns persistence and polkit authorization applies to `hostnamectl` requests.
 - `hostnamectl set-hostname` no longer automatically overwrites `PRETTY_HOSTNAME`; use `set-hostname --pretty` to change it explicitly.
@@ -20,6 +26,8 @@ All notable changes to `hostnamed` are documented in this file, derived from the
 - `HostnameSource` can now report `default` (static hostname unset and kernel hostname unset, `(none)`, or equal to the default); it previously only ever reported `static` or `transient`.
 - `SetPrettyHostname` no longer truncates arbitrary labels at the first dot. The leading-label reduction now applies only when the whole value is a valid hostname, so `Bob's PC v2.0` is stored as given while `dair.example.net` still becomes `dair`.
 - Polkit challenges are now reported as `org.freedesktop.DBus.Error.InteractiveAuthorizationRequired` when the caller passed `interactive=false` but authentication is possible, instead of a generic `AUTH_FAILED`, so GUI clients can retry with an agent dialog (matches localed).
+- Fixed hostname-operation error handling to return stable D-Bus errors and keep exported property state synchronized when persistence fails after an on-disk change.
+- Fixed the root polkit bypass so it applies only to hostname1 actions.
 
 ### Added
 - Device-tree fallbacks for platforms without DMI (ARM, RISC-V, e.g. Raspberry Pi): `HardwareModel` from `/sys/firmware/devicetree/base/model`, `HardwareVendor` from the vendor prefix of the first `compatible` entry, and `Chassis` from `chassis-type` when it is a known value.
@@ -57,7 +65,7 @@ All notable changes to `hostnamed` are documented in this file, derived from the
 ## [0.1.0] - 2026-05-31 to 2026-06-17
 
 ### Added
-- Initial project scaffolding: `main.c`, `rcl-hostname.c`/`.h`, `meson.build`, `meson_options.txt`, `README.md`, `LINGUAS`, `POTFILES` (`0056f42`, `233e8cf`, `ac4da26`, `952f142`, `2184bd5`)
+- Initial project scaffolding: `main.c`, `rcl-hostname.c`/`rcl-hostname.h`, `meson.build`, `meson_options.txt`, `README.md`, `LINGUAS`, `POTFILES` (`0056f42`, `233e8cf`, `ac4da26`, `952f142`, `2184bd5`)
 - D-Bus interface description (`org.freedesktop.hostname1.xml`), service activation file (`.service.in`), polkit policy (`.policy`), and polkit rules (later templated as `.rules.in`) (`02fe5db`, `94dbb9e`, `64f6dc4`, `d630173`, `5251a8a`)
 - SlackBuild packaging script (`2f36c95`), briefly renamed to `slack-desc` then restored (`db3bf5c`)
 - `hostnamectl` and `localectl` companion shell scripts (`a3ed2a8`, `581d92b`)
@@ -72,7 +80,7 @@ All notable changes to `hostnamed` are documented in this file, derived from the
 - Simplified the polkit rule, removing an unneeded early return for non-privileged subjects (`fa2e743`)
 - Refactored `hostnamectl` for clearer structure and parsing (`dff42ce`)
 - Replaced decorative comment banners with plain separators across the codebase (`19e98c1`)
-- Cleaned up and reformatted `meson.build` / `meson_options.txt` across several passes, removing dead/commented sections (`616ede9`, `be0bb13`, `4c03939`, `e4648f2`, `15de2e1`)
+- Cleaned up and reformatted `meson.build` / `meson_options.txt` across several passes (`616ede9`, `be0bb13`, `4c03939`, `e4648f2`, `15de2e1`)
 - Updated copyright year and author metadata in `rcl-hostname.c` (`8205b67`)
 - Numerous incremental updates to `main.c`, `rcl-hostname.h`, and `meson.build` while stabilizing the initial build (`1ee763e`, `dbbd846`, `5a52b7c`, `7bfa26d`, `59f6673`, `661a430`, `30e4ff1`, `51cdd55`, `86a343c`, `f04035b`, `e4b5d9d`, `2a8e080`, `c3e4bfe`, `017e1c3`, `e3ad6e5`, `1574abd`)
 
