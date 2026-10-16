@@ -85,13 +85,16 @@ subdir('po')
 subdir('man')
 
 summary({
-  'prefix'     : prefix,
-  'sysconfdir' : sysconfdir,
-  'datadir'    : datadir,
-  'localedir'  : localedir,
-}, section : 'Directories')
+    'Tests': get_option('tests'),
+  },
+  bool_yn: true,
+)
 
 summary({
-  'polkit' : polkit.version(),
-  'GLib'   : glib_dep.version(),
-}, section : 'Dependencies')
+    'hostname': get_option('hostname_conf'),
+    'os-release': get_option('os_conf'),
+    'machine-info': get_option('machine_conf'),
+    'privileged group': get_option('privileged-group'),
+  },
+  section: 'Configuration',
+)
