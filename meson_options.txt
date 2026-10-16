@@ -1,7 +1,7 @@
 option(
   'tests',
   type        : 'boolean',
-  value       : true,
+  value       : false,
   description : 'Build and register the test suite',
 )
 
