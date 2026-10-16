@@ -51,6 +51,7 @@ install_data(
 install_data(
   'org.freedesktop.hostname1.xml',
   install_dir : join_paths(prefix, datadir, 'dbus-1', 'interfaces'),
+)
 
 install_data(
   'org.freedesktop.hostname1.policy',
