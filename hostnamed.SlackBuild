@@ -71,6 +71,7 @@ meson setup \
   --localstatedir=/var \
   --mandir=/usr/man \
   --buildtype=release \
+  -Dtests=false \
   -Dprivileged-group=wheel \
   -Dhostname_conf=/etc/HOSTNAME \
   -Dmachine_conf=/etc/machine-info \
