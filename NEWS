@@ -2,6 +2,41 @@
 
 All notable changes to `hostnamed` are documented in this file, derived from the project's git history.
 
+## [0.2.7.2] - 2026-10-16
+
+### Changed
+- **BUILD CHANGE:** polkit is now a hard requirement; the `-Dpolkit` option and all `HAVE_POLKIT` conditionals are gone (`46b4f7c`)
+- D-Bus service file now execs `@LIBEXECDIR@/hostnamed` instead of `@SBINDIR@/hostnamed` (`71217c2`, `1bafab4`)
+
+### Added
+- Install the `org.freedesktop.hostname1.xml` interface description to `<datadir>/dbus-1/interfaces` (`864aac8`, `43505e5`)
+
+### Fixed
+- `Chassis` and `IconName` no longer emit duplicate `PropertiesChanged` entries on every sync; the machine-info value wins, DMI is the fallback, and each property is updated once (`46b4f7c`)
+- Fixed the `dbus_service_conf` variable name in `data/meson.build` (`71217c2`)
+
+### Housekeeping
+- Version bumped 0.2.7.1 → 0.2.7.2 (`c383c33`)
+
+## [0.2.7.1] - 2026-09-01
+
+### Changed
+- Removed the unused `sbindir`, `SBINDIR` and `DATADIR` build variables and simplified the configure summary (`2a89dd9`)
+- Version bumped 0.2.7 → 0.2.7.1 (`2a89dd9`)
+- Translation updates merged from Weblate (PRs #6, #7)
+
+## [0.2.7] - 2026-06-27
+
+### Fixed
+- The inotify watch on machine-info never fired because `main.c` passed the literal string `"RCL_MACHINE_FILE"`; it now uses `RCL_MACHINE_INFO_FILE` (`8d7f37c`)
+
+### Security
+- `hostnamectl` now rejects control characters, double quotes and backslashes in `PRETTY_HOSTNAME`, `ICON_NAME`, `DEPLOYMENT` and `LOCATION`, mirroring the daemon's validation; machine-info is also created with `printf` instead of an expanding heredoc (`6eba946`)
+
+### Changed
+- `meson.build` update and version bump to 0.2.7 (`b25c9eb`)
+- Translations refreshed and extended via Weblate (PRs #3, #4, #5)
+
 ## [0.2.6] - 2026-06-20
 
 ### Security
