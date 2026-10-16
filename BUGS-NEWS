@@ -2,7 +2,7 @@ NEWS
 ====
 
 This file summarizes user-visible changes to hostnamed, most recent first.
-See CHANGELOG.md for the full commit-level history.
+See ChangeLog.md for the full commit-level history.
 
 0.2.7.2 (2026-10-16)
 --------------------
@@ -19,6 +19,10 @@ See CHANGELOG.md for the full commit-level history.
   tooling.
 * Fixed duplicate Chassis/IconName entries in PropertiesChanged on
   every resync when those keys came from the DMI fallback.
+* Added a test suite (tests/) and a GitHub Actions workflow that builds
+  the project, runs the tests, validates the shipped XML and checks a
+  staged install.
+* The commit-level history file is now ChangeLog.md (formerly NEWS).
 
 0.2.7.1 (2026-09-01)
 --------------------
@@ -111,8 +115,9 @@ Please report new issues at https://github.com/nater1983/hostnamed/issues
   has only been exercised against typical desktop-supplied values;
   unusual input (IDN/punycode labels, multiple consecutive dots) is
   not specifically covered by tests.
-* No automated test suite or CI currently exists for this project;
-  changes are validated manually against GNOME Control Center's
+* Test coverage is mostly source/packaging invariants. The live D-Bus,
+  polkit and machine-info tests are opt-in and are not run in CI;
+  behaviour is still validated manually against GNOME Control Center's
   System panel.
 * hostnamectl/localectl write configuration files directly and rely
   on inotify for the daemon to notice the change; very rapid
