@@ -27,6 +27,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/file.h>
 #include <sys/utsname.h>
 #include <time.h>
 #include <unistd.h>
@@ -725,7 +726,13 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
     g_free( sys_v ); g_free( board_v ); g_free( compat ); g_free( dt_v );
     g_free( prod );  g_free( board_n ); g_free( dt_m );
   }
-  UPDATE_STR_PROP( firmware_version, read_dmi(RCL_DMI_BIOS_VERSION),  "FirmwareVersion" );
+  {
+    gchar *bios = read_dmi (RCL_DMI_BIOS_VERSION);
+    gchar *usable = first_usable_dup (bios, NULL, NULL);
+    UPDATE_STR_PROP (firmware_version, usable, "FirmwareVersion");
+    g_free (bios);
+    g_free (usable);
+  }
 
   /* FirmwareDate is type 't' (uint64 µs since epoch) per the spec */
   {
@@ -805,8 +812,8 @@ sync_parent_directory (const gchar *path, GError **error)
  * (without special bits), or use 0644 for a new file. The destination is not
  * touched unless the complete temporary file has been written and synced. */
 static gboolean
-atomic_replace_file (const gchar *path, const gchar *contents, gsize length,
-                     GError **error)
+atomic_replace_file_mode (const gchar *path, const gchar *contents, gsize length,
+                          mode_t required_mode, GError **error)
 {
   gchar *tmp_path = g_strdup_printf ("%s.XXXXXX", path);
   struct stat st;
@@ -852,7 +859,10 @@ atomic_replace_file (const gchar *path, const gchar *contents, gsize length,
   }
   /* Preserve ordinary rwx permissions, but never carry setuid/setgid
    * or sticky bits onto a newly written configuration file. */
-  if (fchmod (fd, existed ? (st.st_mode & 0777) : 0644) != 0) {
+  mode_t safe_mode = required_mode != 0 ? required_mode :
+                     (existed ? (st.st_mode & 0777) : 0644);
+  safe_mode &= ~0022;
+  if (fchmod (fd, safe_mode) != 0) {
     g_set_error (error, G_IO_ERROR, g_io_error_from_errno (errno),
                  "set permissions for %s: %s", path, g_strerror (errno));
     goto close_out;
@@ -908,6 +918,14 @@ out:
   return ok;
 }
 
+/* Preserve the historical call shape for files whose mode may be retained. */
+static gboolean
+atomic_replace_file (const gchar *path, const gchar *contents, gsize length,
+                     GError **error)
+{
+  return atomic_replace_file_mode (path, contents, length, 0, error);
+}
+
 /* --------------------------------------------------------------------------
    machine-info writer
 
@@ -920,6 +938,43 @@ out:
    caller cannot reintroduce machine-info injection by forgetting to validate. */
 static gboolean rcl_machine_info_value_is_safe( const gchar *value );
 
+/* Serialize daemon writers and reject a symlink or untrusted lock file. */
+static int
+lock_machine_info_file (GError **error)
+{
+  gchar *path = g_strconcat (RCL_MACHINE_INFO_FILE, ".lock", NULL);
+  int fd = open (path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0600);
+  struct stat st;
+  int saved_errno;
+
+  if (fd < 0) {
+    saved_errno = errno;
+    g_set_error (error, G_IO_ERROR, g_io_error_from_errno (saved_errno),
+                 "open machine-info lock %s: %s", path, g_strerror (saved_errno));
+    g_free (path);
+    return -1;
+  }
+  if (fstat (fd, &st) != 0 || !S_ISREG (st.st_mode) || st.st_uid != 0) {
+    saved_errno = errno != 0 ? errno : EPERM;
+    g_set_error (error, G_IO_ERROR, G_IO_ERROR_PERMISSION_DENIED,
+                 "machine-info lock %s must be a root-owned regular file", path);
+    close (fd);
+    g_free (path);
+    (void) saved_errno;
+    return -1;
+  }
+  if (fchmod (fd, 0600) != 0 || flock (fd, LOCK_EX) != 0) {
+    saved_errno = errno;
+    g_set_error (error, G_IO_ERROR, g_io_error_from_errno (saved_errno),
+                 "secure or lock %s: %s", path, g_strerror (saved_errno));
+    close (fd);
+    g_free (path);
+    return -1;
+  }
+  g_free (path);
+  return fd;
+}
+
 static gboolean
 write_machine_info_key (const gchar *key, const gchar *value, GError **error)
 {
@@ -929,6 +984,7 @@ write_machine_info_key (const gchar *key, const gchar *value, GError **error)
   gboolean found = FALSE;
   gchar *prefix;
   GError *read_error = NULL;
+  int lock_fd;
 
   /* Empty or NULL values remove the key. Refuse to rewrite the file if it
    * exists but cannot be read: otherwise unrelated settings could be lost. */
@@ -938,10 +994,15 @@ write_machine_info_key (const gchar *key, const gchar *value, GError **error)
     return FALSE;
   }
 
+  lock_fd = lock_machine_info_file (error);
+  if (lock_fd < 0)
+    return FALSE;
+
   if (!g_file_get_contents (RCL_MACHINE_INFO_FILE, &contents, NULL, &read_error)) {
     if (!g_error_matches (read_error, G_FILE_ERROR, G_FILE_ERROR_NOENT)) {
       g_propagate_prefixed_error (error, read_error,
                                   "Cannot read %s: ", RCL_MACHINE_INFO_FILE);
+      close (lock_fd);
       return FALSE;
     }
     g_clear_error (&read_error);
@@ -969,9 +1030,10 @@ write_machine_info_key (const gchar *key, const gchar *value, GError **error)
   g_strfreev (lines);
   g_free (prefix);
 
-  gboolean ok = atomic_replace_file (RCL_MACHINE_INFO_FILE, out->str,
-                                     out->len, error);
+  gboolean ok = atomic_replace_file_mode (RCL_MACHINE_INFO_FILE, out->str,
+                                          out->len, 0644, error);
   g_string_free (out, TRUE);
+  close (lock_fd);
   return ok;
 }
 
@@ -1389,6 +1451,14 @@ parse_uuid_bytes( const gchar *str, guchar out[16] )
     }
   }
 
+  /* DMI product UUIDs must use canonical 8-4-4-4-12 formatting. */
+  if (strlen (str) != 36)
+    return FALSE;
+  for (gsize i = 0; i < 36; i++) {
+    gboolean hyphen = (i == 8 || i == 13 || i == 18 || i == 23);
+    if (hyphen != (str[i] == '-'))
+      return FALSE;
+  }
   return n == 16 && hi < 0 && or_all != 0 && and_all != 0xff;
 }
 
@@ -1403,7 +1473,7 @@ do_get_product_uuid( GDBusMethodInvocation *invocation )
   {
     g_free( uuid_str );
     g_dbus_method_invocation_return_dbus_error( invocation,
-      "org.freedesktop.DBus.Error.Failed", "Product UUID is not available" );
+      "org.freedesktop.DBus.Error.NotSupported", "Product UUID is not available" );
     return;
   }
   g_free( uuid_str );
