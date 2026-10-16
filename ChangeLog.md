@@ -10,13 +10,18 @@ All notable changes to `hostnamed` are documented in this file, derived from the
 
 ### Added
 - Install the `org.freedesktop.hostname1.xml` interface description to `<datadir>/dbus-1/interfaces` (`864aac8`, `43505e5`)
+- Test suite under `tests/` (security invariants, filesystem/packaging invariants, install layout, opt-in live runtime integration), wired into Meson behind a `tests` check (`bc7f5f8`, `10835ac`)
+- Test fail due to getting code updated for 0.3.0 release.
+- GitHub Actions workflow that builds, runs `meson test`, syntax-checks the harnesses and `hostnamectl`, validates the shipped XML, and verifies a staged install (`8a8bce2`)
 
 ### Fixed
 - `Chassis` and `IconName` no longer emit duplicate `PropertiesChanged` entries on every sync; the machine-info value wins, DMI is the fallback, and each property is updated once (`46b4f7c`)
 - Fixed the `dbus_service_conf` variable name in `data/meson.build` (`71217c2`)
+- Defined the missing `tests` Meson option that `meson.build` already referenced, which had broken `meson setup` (`1ae67f3`)
 
 ### Housekeeping
 - Version bumped 0.2.7.1 → 0.2.7.2 (`c383c33`)
+- Renamed `NEWS` to `ChangeLog.md` (`3792d11`)
 
 ## [0.2.7.1] - 2026-09-01
 
