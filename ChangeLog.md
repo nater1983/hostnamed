@@ -15,6 +15,10 @@ All notable changes to `hostnamed` are documented in this file, derived from the
 - GitHub Actions workflow that builds, runs `meson test`, syntax-checks the harnesses and `hostnamectl`, validates the shipped XML, and verifies a staged install (`8a8bce2`)
 
 ### Fixed
+- Hostname validation now enforces RFC 1123 labels: empty labels (`a..b`), labels starting or ending with `-`, and labels longer than 63 characters are rejected
+- `GetProductUUID` now returns the 16 raw UUID bytes (as systemd does) instead of the 36 ASCII characters of the text form, and returns `NotSupported` when the UUID is unavailable and an error when it is malformed
+- machine-info writer: write directly with `g_file_set_contents()` instead of a redundant `.tmp` plus `rename()` (no more stale `/etc/machine-info.tmp`), collapse duplicated keys, and keep blank lines
+- `/etc/machine-info` and `/etc/HOSTNAME` are forced to mode 0644 after writing, and the daemon sets `umask(022)` at startup
 - `Chassis` and `IconName` no longer emit duplicate `PropertiesChanged` entries on every sync; the machine-info value wins, DMI is the fallback, and each property is updated once (`46b4f7c`)
 - Fixed the `dbus_service_conf` variable name in `data/meson.build` (`71217c2`)
 - Defined the missing `tests` Meson option that `meson.build` already referenced, which had broken `meson setup` (`1ae67f3`)
