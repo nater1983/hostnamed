@@ -1,88 +1,126 @@
 # Changelog
 
-All notable changes to `hostnamed` are documented in this file, derived from the project's git history.
+All notable changes to `hostnamed` are documented here, newest release first.
 
-## [0.3.0] - 2026-10-14
+## [0.3.0] - 2026-10-16
 
-### Changed (D-Bus API, authorization, and persistence)
-- Marked immutable hostname1 properties with `EmitsChangedSignal=const` annotations in both the shipped interface XML and the daemon's embedded introspection XML.
-- Scoped the root polkit authorization bypass to `org.freedesktop.hostname1.*` actions; the rule no longer grants an unconditional success for unrelated actions.
-- Standardized hostname-operation failures on stable D-Bus error names and ensured property state is refreshed on persistence error paths, including failures that occur after a file replacement has already taken effect.
-- Kept hostname changes behind the daemon's D-Bus methods so polkit authorization is applied consistently and the daemon remains responsible for writing the system configuration files.
+### Security and persistence
+- Routed hostname and machine-info changes from `hostnamectl` through the
+  system D-Bus `org.freedesktop.hostname1` API. The daemon performs the
+  privileged file updates and polkit authorization; the shell client no longer
+  bypasses that authorization path with direct configuration-file writes.
+- Fixed `set-hostname` so changing the static/transient hostname does not
+  overwrite `PRETTY_HOSTNAME` unless a pretty-hostname change is explicitly
+  requested.
+- Hardened atomic replacement so the resulting file mode is selected
+  deliberately rather than inheriting `mktemp`'s restrictive mode. Machine
+  metadata writes install `/etc/machine-info` with mode `0644`.
+- Added advisory locking around machine-info read/modify/write updates to
+  serialize cooperating hostnamed writers and reduce lost updates.
+- Kept unrelated machine-info entries when updating a single key and retained
+  validation in the writer as defence in depth.
+- Tightened product UUID parsing to require canonical 36-character
+  `8-4-4-4-12` UUID syntax and reject all-zero and all-`FF` placeholder
+  values. Unavailable or invalid product UUIDs return a D-Bus error instead
+  of fabricated data.
 
-### Changed (hostnamectl)
-- Routed hostname-setting and machine-info changes through the system D-Bus `org.freedesktop.hostname1` methods instead of direct writes by the shell client. The daemon now owns persistence and polkit authorization applies to `hostnamectl` requests.
-- `hostnamectl set-hostname` no longer automatically overwrites `PRETTY_HOSTNAME`; use `set-hostname --pretty` to change it explicitly.
+### D-Bus and polkit
+- Kept hostname-setting operations behind the daemon's D-Bus methods so
+  authorization and persistence follow one path.
+- Scoped the root polkit authorization bypass to hostname1 actions rather than
+  granting unconditional success for unrelated actions.
+- Standardized hostname-operation errors and kept exported property state
+  synchronized on persistence error paths, including errors after an on-disk
+  replacement has taken effect.
+- Marked immutable hostname1 properties with `EmitsChangedSignal=const` in
+  both the shipped interface XML and embedded introspection data.
+- Interactive polkit challenges use
+  `org.freedesktop.DBus.Error.InteractiveAuthorizationRequired` when the
+  caller requests non-interactive authorization but an authentication prompt
+  could satisfy the action.
+- polkit is now a required build dependency. The obsolete `-Dpolkit` build
+  option and related conditional configuration were removed.
 
-### Changed (build / compatibility)
-- **polkit is now a hard build dependency.** The `-Dpolkit=disabled` / `polkit` feature option has been removed, along with the unused `HAVE_POLKIT` define and every `polkit_found` conditional in the meson files. Previously a build without polkit failed at `#include <polkit/polkit.h>` anyway, and without polkit nothing could authorise the Set* methods. Anyone passing `-Dpolkit=...` to `meson setup` must drop it.
-- Hostname validation (`SetHostname`, `SetStaticHostname`) is now strict RFC 1123: labels of 1-63 characters, no empty labels (`a..b`), no leading/trailing dot, and no label that starts or ends with `-`. Names that were previously accepted but are invalid under these rules are now rejected with `InvalidArgs`.
-- `GetProductUUID` now returns the 16 raw UUID bytes (as systemd-hostnamed does) instead of the 36-character ASCII string as `ay`. It returns a `NotFound` error, rather than an empty array, when the UUID is unreadable, malformed, or the all-zero / all-0xFF placeholder.
+### Hostname behavior and hardware identification
+- Static and transient hostname validation follows strict RFC 1123 label
+  rules: labels must be 1–63 characters, cannot be empty, and cannot begin or
+  end with a hyphen.
+- `SetPrettyHostname` preserves free-form dotted names instead of truncating
+  every value at the first dot.
+- Fixed duplicate or spurious `Chassis` and `IconName` property-change
+  notifications by calculating effective values before updating the cache.
+- `IconName` follows the effective chassis, including chassis data from
+  machine-info when no explicit icon is configured.
+- Populated `DefaultHostname` from os-release where available, with
+  `localhost` as the fallback; `HostnameSource` can report the default
+  hostname state.
+- Improved hardware identification fallback order and skip common DMI
+  placeholder strings. Hardware model and vendor can fall back to device-tree
+  data on platforms without usable DMI values.
+- Hardware serial lookup tries DMI product, board, and chassis serial values
+  before falling back to the device-tree serial-number property.
+- Expanded chassis mappings for server, embedded, and desktop form factors;
+  kept the Slackware `hostnamectl` implementation aligned with the daemon.
 
-### Fixed
-- Fixed bogus `PropertiesChanged` emissions: `Chassis` and `IconName` were blanked and re-set on every resync, producing duplicate dict keys and a signal on every inotify event. The effective value (machine-info, then fallbacks) is now computed first and updated once; three file touches now produce one signal instead of ten.
-- `IconName` is now derived from the effective chassis string, so `CHASSIS=laptop` in `/etc/machine-info` without an `ICON_NAME` yields `computer-laptop` rather than `computer`.
-- `DefaultHostname` is now populated (`DEFAULT_HOSTNAME` from os-release, else `localhost`); it was always empty.
-- `HostnameSource` can now report `default` (static hostname unset and kernel hostname unset, `(none)`, or equal to the default); it previously only ever reported `static` or `transient`.
-- `SetPrettyHostname` no longer truncates arbitrary labels at the first dot. The leading-label reduction now applies only when the whole value is a valid hostname, so `Bob's PC v2.0` is stored as given while `dair.example.net` still becomes `dair`.
-- Polkit challenges are now reported as `org.freedesktop.DBus.Error.InteractiveAuthorizationRequired` when the caller passed `interactive=false` but authentication is possible, instead of a generic `AUTH_FAILED`, so GUI clients can retry with an agent dialog (matches localed).
-- Fixed hostname-operation error handling to return stable D-Bus errors and keep exported property state synchronized when persistence fails after an on-disk change.
-- Fixed the root polkit bypass so it applies only to hostname1 actions.
-
-### Added
-- Device-tree fallbacks for platforms without DMI (ARM, RISC-V, e.g. Raspberry Pi): `HardwareModel` from `/sys/firmware/devicetree/base/model`, `HardwareVendor` from the vendor prefix of the first `compatible` entry, and `Chassis` from `chassis-type` when it is a known value.
-- `HardwareVendor` is now taken from DMI `sys_vendor`, then `board_vendor`, then the device tree; `HardwareModel` from `product_name`, then `board_name`, then the device tree. Empty values and the unfilled template strings firmware leaves behind (`System manufacturer`, `System Product Name`, `To Be Filled By O.E.M.`, `Default string`, ...) are skipped at each step, so boards such as the ASUS PRIME B550-PLUS now report the real board name and vendor instead of the placeholder. `slack/hostnamectl` uses the same logic and the same placeholder list (it now also reads the device tree and honours `DMI_DIR` / `DT_DIR` for testing).
-- `GetHardwareSerial` now returns the first usable serial from DMI `product_serial`, `board_serial`, `chassis_serial` (it previously read `chassis_serial` only, which many boards leave as `Default string`), skipping the same placeholder values, and falls back to the device-tree `serial-number` property on platforms without a DMI serial (e.g. Raspberry Pi).
-- Expanded chassis table: rack-mount, multi-system and blade types map to `server`; IoT gateway and embedded PC map to `embedded`; all-in-one, pizza-box, space-saving, lunch-box, sealed-case, mini-PC and stick-PC map to `desktop`. The case tables in `slack/hostnamectl` were updated to match.
+### Tests and packaging
+- Expanded security-invariant and filesystem/packaging regression checks for
+  machine-info permissions and updates, hostnamectl's D-Bus usage, polkit
+  authorization wiring, UUID validation, hardware fallbacks, and install
+  layout.
+- CI configures and compiles the project, runs registered Meson tests,
+  syntax-checks the test harnesses and `hostnamectl`, validates shipped XML,
+  and checks staged installation and packaging.
 
 ## [0.2.7.1] - 2026-06-27 to 2026-09-01
-- Added validation for hostname metadata values and corrected the machine-info path constant.
-- Man pages for `hostnamed(8)` and `hostnamectl(1)` added and compressed in the SlackBuild.
-- New and updated translations (Arabic Latin script, Indonesian, Estonian and others) via Weblate; project version bumped to 0.2.7 then 0.2.7.1.
-- Removed `sbindir` paths from the build.
+
+- Added validation for hostname metadata values and corrected the machine-info
+  path constant.
+- Added man pages for `hostnamed(8)` and `hostnamectl(1)`; compressed them
+  in the SlackBuild.
+- Added and updated translations through Weblate, including Arabic Latin
+  script and Indonesian and Estonian updates.
+- Removed obsolete `sbindir` paths from the build.
 
 ## [0.2.6] - 2026-06-20
 
 ### Security
-- Fixed a polkit authorization bypass and a JSON escaping bug in the D-Bus interface (PR #1, rizitis/main) (`9acb293`, `96438ab`)
-- Reworked polkit authorization checks to run **asynchronously** via `PolkitAuthority` callbacks instead of blocking sync calls, so the agent password dialog no longer stalls the single-threaded main loop (`8afc587`)
-- Added two dedicated polkit actions, `org.freedesktop.hostname1.get-product-uuid` and `org.freedesktop.hostname1.get-hardware-serial`, replacing reuse of the `set-hostname` action for hardware reads (`8afc587`)
-- Added defence-in-depth value validation directly in the machine-info writer (`write_machine_info_key`), independent of caller-side checks (`8afc587`)
+- Fixed a polkit authorization bypass and a D-Bus JSON-escaping bug.
+- Reworked polkit authorization checks to run asynchronously so authentication
+  prompts do not block the daemon's main loop.
+- Added dedicated polkit actions for `GetProductUUID` and
+  `GetHardwareSerial`.
+- Added validation directly in the machine-info writer.
 
 ### Changed
-- Cleaned up `hostnamed.SlackBuild`, removing leftover `localectl` references (`2154cfb`)
-- Reworked hostname/machine-info file path references and added dedicated config options for `os-release` and `machine-info` paths (`ae6c851`, `e61b73e`, `1d59143`, `df1b9a4`)
-- Added direct property-cache updates for machine-info keys, correctly emitting `PropertiesChanged` instead of relying on a full resync (`ea8a974`)
-- Implemented a pretty-hostname sanitiser to derive a clean label from an FQDN (`b1c9527`)
-- Refactored the polkit `.rules.in` logic for hostname management (`68c91f7`, `38ddd77`)
-
-### Added
-- Added GPLv2 license file (`de0dd36`)
+- Cleaned up the SlackBuild and removed leftover `localectl` references.
+- Added configurable paths for os-release and machine-info.
+- Added direct property-cache updates for machine-info keys.
+- Improved pretty-hostname derivation from fully qualified hostname input.
+- Refactored polkit rules and authorization handling.
 
 ## [0.2.0] - 2026-06-19
-- Bumped version 0.1.0 → 0.2.0 (`3a072dc`)
+
+- Bumped the project version from 0.1.0 to 0.2.0.
+- Added configurable os-release and machine-info paths.
+- Improved pretty-hostname derivation from FQDN input.
+- Exposed `FirmwareDate` as a D-Bus uint64 in microseconds since the Unix
+  epoch.
+- Updated machine-info property-cache values and emitted
+  `PropertiesChanged` directly.
 
 ## [0.1.0] - 2026-05-31 to 2026-06-17
 
 ### Added
-- Initial project scaffolding: `main.c`, `rcl-hostname.c`/`rcl-hostname.h`, `meson.build`, `meson_options.txt`, `README.md`, `LINGUAS`, `POTFILES` (`0056f42`, `233e8cf`, `ac4da26`, `952f142`, `2184bd5`)
-- D-Bus interface description (`org.freedesktop.hostname1.xml`), service activation file (`.service.in`), polkit policy (`.policy`), and polkit rules (later templated as `.rules.in`) (`02fe5db`, `94dbb9e`, `64f6dc4`, `d630173`, `5251a8a`)
-- SlackBuild packaging script (`2f36c95`), briefly renamed to `slack-desc` then restored (`db3bf5c`)
-- `hostnamectl` and `localectl` companion shell scripts (`a3ed2a8`, `581d92b`)
-- Input validation for hostnames and machine-info values (`65c0675`)
-- `default_hostname`, privileged-group, and hostname-file configuration options (`d14df64`, `09b8666`)
+- Initial implementation of `org.freedesktop.hostname1` over plain D-Bus,
+  without a systemd or logind dependency.
+- Hostname and machine-info setters protected by polkit.
+- Hostname and machine-info value validation.
+- `hostnamectl` and `localectl` companion scripts and SlackBuild packaging.
+- D-Bus interface XML, activation service, polkit policy and rules, Meson
+  build files, translations, and initial documentation.
 
 ### Changed
-- Refactored authorization handling in `rcl-hostname.c` (`173a8b8`)
-- Changed `FirmwareDate` D-Bus property type to `t` (uint64) and implemented microsecond-since-epoch parsing (`e5c2bc2`)
-- Refactored the `RclState` structure and logging mechanism (`51c7a00`)
-- Tightened the D-Bus security policy in `org.freedesktop.hostname1.conf`, replacing explanatory comments with explicit interface allow-rules (`47e7cce`)
-- Simplified the polkit rule, removing an unneeded early return for non-privileged subjects (`fa2e743`)
-- Refactored `hostnamectl` for clearer structure and parsing (`dff42ce`)
-- Replaced decorative comment banners with plain separators across the codebase (`19e98c1`)
-- Cleaned up and reformatted `meson.build` / `meson_options.txt` across several passes (`616ede9`, `be0bb13`, `4c03939`, `e4648f2`, `15de2e1`)
-- Updated copyright year and author metadata in `rcl-hostname.c` (`8205b67`)
-- Numerous incremental updates to `main.c`, `rcl-hostname.h`, and `meson.build` while stabilizing the initial build (`1ee763e`, `dbbd846`, `5a52b7c`, `7bfa26d`, `59f6673`, `661a430`, `30e4ff1`, `51cdd55`, `86a343c`, `f04035b`, `e4b5d9d`, `2a8e080`, `c3e4bfe`, `017e1c3`, `e3ad6e5`, `1574abd`)
-
-### Removed
-- Deleted and recreated `hostnamectl` during early iteration (`9dd6682`, `30a0201`, `6d92e35`)
+- Refined authorization handling, hostname state management, D-Bus interface
+  metadata, and build configuration during initial development.
+- Changed `FirmwareDate` to the D-Bus uint64 representation.
+- Tightened the D-Bus security policy and simplified the polkit rules.
