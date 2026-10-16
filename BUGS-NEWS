@@ -4,6 +4,37 @@ NEWS
 This file summarizes user-visible changes to hostnamed, most recent first.
 See CHANGELOG.md for the full commit-level history.
 
+0.2.7.2 (2026-10-16)
+--------------------
+* BUILD CHANGE: PolKit is now required to build hostnamed. The
+  -Dpolkit option has been removed; the daemon never worked without
+  it, since PolKit is the only authorization path for the Set*
+  methods.
+* The D-Bus activation file now launches hostnamed from libexecdir
+  rather than sbindir. Packagers that install the binary elsewhere
+  should check the Exec= line of the generated
+  org.freedesktop.hostname1.service.
+* The org.freedesktop.hostname1.xml interface description is now
+  installed to <datadir>/dbus-1/interfaces for introspection and
+  tooling.
+* Fixed duplicate Chassis/IconName entries in PropertiesChanged on
+  every resync when those keys came from the DMI fallback.
+
+0.2.7.1 (2026-09-01)
+--------------------
+* Removed unused sbindir/DATADIR build variables.
+* Translation updates.
+
+0.2.7 (2026-06-27)
+------------------
+* Fixed the inotify watch on /etc/machine-info, which never fired
+  because of a mistyped path constant. External edits to
+  machine-info are now picked up as intended.
+* hostnamectl now validates PRETTY_HOSTNAME, ICON_NAME, DEPLOYMENT and
+  LOCATION values the same way the daemon does, rejecting control
+  characters, double quotes and backslashes.
+* Translation updates.
+
 0.2.6 (2026-06-20)
 -----------------------
 * PolKit authorization checks are now asynchronous. The agent password
@@ -58,7 +89,7 @@ See CHANGELOG.md for the full commit-level history.
 BUGS
 ====
 
-Known issues and limitations as of the Unreleased version above.
+Known issues and limitations as of the latest version above.
 Please report new issues at https://github.com/nater1983/hostnamed/issues
 
 * GetProductUUID and GetHardwareSerial default to the auth_admin
