@@ -18,7 +18,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
-            build-essential meson ninja-build pkg-config \
+            build-essential meson ninja-build pkg-config gettext \
             libglib2.0-dev libpolkit-gobject-1-dev libdbus-1-dev
 
       - name: Configure
@@ -29,6 +29,11 @@ jobs:
 
       - name: Run Meson tests
         run: meson test -C build --print-errorlogs
+
+      - name: Syntax-check test harnesses and hostnamectl
+        run: |
+          python3 -m py_compile tests/test-runtime-integration.py tests/test-filesystem-packaging-invariants.py tests/test-install-layout.py
+          bash -n slack/hostnamectl
 
       - name: Validate shipped XML
         run: |
@@ -42,3 +47,8 @@ jobs:
               ET.parse(path)
               print(f"valid XML: {path}")
           PY
+
+      - name: Verify staged install and packaged hostnamectl
+        run: |
+          meson install -C build --destdir "$PWD/stage"
+          python3 tests/test-install-layout.py "$PWD/stage"
