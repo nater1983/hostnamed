@@ -19,6 +19,16 @@ See ChangeLog.md for the full commit-level history.
   tooling.
 * Fixed duplicate Chassis/IconName entries in PropertiesChanged on
   every resync when those keys came from the DMI fallback.
+* Hostnames are now validated per RFC 1123: empty labels, labels that
+  start or end with a hyphen, and labels over 63 characters are
+  rejected by SetHostname and SetStaticHostname.
+* GetProductUUID now returns the 16 raw UUID bytes, matching
+  systemd-hostnamed, instead of the 36-character text form. Clients
+  that parsed the old text-as-bytes payload must be updated. It
+  returns NotSupported when the UUID is unavailable.
+* /etc/machine-info and /etc/HOSTNAME are written with mode 0644 and
+  the daemon runs with umask 022. Duplicate keys in machine-info are
+  collapsed on the next write, and blank lines are preserved.
 * Added a test suite (tests/) and a GitHub Actions workflow that builds
   the project, runs the tests, validates the shipped XML and checks a
   staged install.
