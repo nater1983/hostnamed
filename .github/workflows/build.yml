@@ -32,7 +32,7 @@ jobs:
 
       - name: Syntax-check test harnesses and hostnamectl
         run: |
-          python3 -m py_compile tests/test-runtime-integration.py tests/test-filesystem-packaging-invariants.py tests/test-install-layout.py
+          python3 -m py_compile tests/test-*.py
           bash -n slack/hostnamectl
 
       - name: Validate shipped XML

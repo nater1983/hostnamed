@@ -1,0 +1,11 @@
+# Build trees
+/build/
+/meson-build/
+/stage/
+
+# Python
+__pycache__/
+*.pyc
+
+# Translation build artifacts
+*.mo
