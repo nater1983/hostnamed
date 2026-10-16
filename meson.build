@@ -77,6 +77,9 @@ configure_file(
 config_h_inc = include_directories('.')
 
 subdir('src')
+if get_option('tests')
+  subdir('tests')
+endif
 subdir('data')
 subdir('po')
 subdir('man')
