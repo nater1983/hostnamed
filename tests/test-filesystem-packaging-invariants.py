@@ -37,7 +37,7 @@ require("org.freedesktop.hostname1.set-static-hostname" in rules and
 # UUID validation enforces the canonical 8-4-4-4-12 form and rejects
 # all-zero/all-FF placeholders. Unsupported hardware reads return a stable
 # D-Bus NotSupported error.
-uuid_start = source.index("parse_uuid_bytes (")
+uuid_start = source.index("parse_uuid_bytes(")
 uuid_end = source.index("static void\ndo_get_product_uuid", uuid_start)
 uuid_fn = source[uuid_start:uuid_end]
 for fragment, message in [
