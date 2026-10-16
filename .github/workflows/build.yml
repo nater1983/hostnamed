@@ -1,0 +1,54 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential meson ninja-build pkg-config gettext \
+            libglib2.0-dev libpolkit-gobject-1-dev libdbus-1-dev
+
+      - name: Configure
+        run: meson setup build --prefix=/usr
+
+      - name: Compile
+        run: meson compile -C build
+
+      - name: Run Meson tests
+        run: meson test -C build --print-errorlogs
+
+      - name: Syntax-check test harnesses and hostnamectl
+        run: |
+          python3 -m py_compile tests/test-runtime-integration.py tests/test-filesystem-packaging-invariants.py tests/test-install-layout.py
+          bash -n slack/hostnamectl
+
+      - name: Validate shipped XML
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          for path in (
+              "data/org.freedesktop.hostname1.conf",
+              "data/org.freedesktop.hostname1.policy",
+              "data/org.freedesktop.hostname1.xml",
+          ):
+              ET.parse(path)
+              print(f"valid XML: {path}")
+          PY
+
+      - name: Verify staged install and packaged hostnamectl
+        run: |
+          meson install -C build --destdir "$PWD/stage"
+          python3 tests/test-install-layout.py "$PWD/stage"
