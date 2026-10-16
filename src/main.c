@@ -22,6 +22,7 @@
 
 #include <string.h>
 #include <signal.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <syslog.h>
 #include <unistd.h>
@@ -397,6 +398,10 @@ gint main(gint argc, gchar **argv)
 
   if (debug)
     verbose = TRUE;
+
+  /* Files we create (/etc/HOSTNAME, /etc/machine-info) must never end up
+     group- or world-writable, whatever umask we were started with. */
+  umask(022);
 
   state          = rcl_state_new();
   state->debug   = debug;
