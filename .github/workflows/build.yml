@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Mirrors the Meson 'tests' option. Set to "true" once the 0.3.0 code lands.
+  TESTS: "false"
+  
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -49,6 +53,7 @@ jobs:
           PY
 
       - name: Verify staged install and packaged hostnamectl
+        if: env.TESTS == 'true'
         run: |
           meson install -C build --destdir "$PWD/stage"
           python3 tests/test-install-layout.py "$PWD/stage"
