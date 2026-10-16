@@ -81,6 +81,13 @@ if get_option('tests')
   subdir('tests')
 endif
 subdir('data')
+# Install the Slackware hostnamectl client for normal Meson installs too.
+install_data(
+  'slack/hostnamectl',
+  install_dir : get_option('bindir'),
+  install_mode : 'rwxr-xr-x',
+)
+
 subdir('po')
 subdir('man')
 
