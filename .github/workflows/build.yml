@@ -26,7 +26,7 @@ jobs:
             libglib2.0-dev libpolkit-gobject-1-dev libdbus-1-dev
 
       - name: Configure
-        run: meson setup build --prefix=/usr
+        run: meson setup build --prefix=/usr -Dtests=$TESTS
 
       - name: Compile
         run: meson compile -C build
