@@ -576,13 +576,13 @@ write_machine_info_key( const gchar  *key,
                         const gchar  *value,
                         GError      **error )
 {
-  gchar  *contents  = NULL;
-  gchar **lines;
-  gsize   i;
+  gchar   *contents = NULL;
+  gchar  **lines;
+  gsize    i;
   GString *out;
   gboolean found = FALSE;
-  gchar   *tmp_path;
   gboolean ok;
+  gchar    prefix[256];
 
   /* Defence in depth: never write a value we have not vetted ourselves, even
      though every current caller already validates before calling us.  An
@@ -601,17 +601,20 @@ write_machine_info_key( const gchar  *key,
   g_free( contents );
 
   out = g_string_new( NULL );
-  gchar prefix[256];
   g_snprintf( prefix, sizeof(prefix), "%s=", key );
 
   for( i = 0; lines[i] != NULL; i++ )
   {
-    if( lines[i][0] == '\0' ) continue; /* skip blank lines; we'll add a trailing newline */
+    /* g_strsplit() yields a trailing empty element when the file ends in a
+       newline; drop only that one so blank lines inside the file survive. */
+    if( lines[i][0] == '\0' && lines[i + 1] == NULL )
+      break;
 
     if( g_str_has_prefix( lines[i], prefix ) )
     {
-      /* Replace or remove this key */
-      if( value && value[0] != '\0' )
+      /* Write the new value once, at the first occurrence; drop any later
+         duplicates of the same key.  An empty value removes the key. */
+      if( !found && value && value[0] != '\0' )
         g_string_append_printf( out, "%s=\"%s\"\n", key, value );
       found = TRUE;
     }
@@ -627,22 +630,14 @@ write_machine_info_key( const gchar  *key,
 
   g_strfreev( lines );
 
-  /* Write atomically */
-  tmp_path = g_strdup( RCL_MACHINE_INFO_FILE ".tmp" );
-  ok = g_file_set_contents( tmp_path, out->str, (gssize)out->len, error );
+  /* g_file_set_contents() already writes a temp file in the same directory
+     and renames it over the target, so no extra temp/rename step is needed. */
+  ok = g_file_set_contents( RCL_MACHINE_INFO_FILE, out->str, (gssize)out->len,
+                            error );
+  if( ok && g_chmod( RCL_MACHINE_INFO_FILE, 0644 ) != 0 )
+    g_warning( "chmod(%s, 0644) failed: %s", RCL_MACHINE_INFO_FILE,
+               g_strerror( errno ) );
 
-  if( ok )
-  {
-    if( g_rename( tmp_path, RCL_MACHINE_INFO_FILE ) != 0 )
-    {
-      g_set_error( error, G_IO_ERROR, g_io_error_from_errno(errno),
-                   "rename(%s, %s): %s", tmp_path,
-                   RCL_MACHINE_INFO_FILE, g_strerror(errno) );
-      ok = FALSE;
-    }
-  }
-
-  g_free( tmp_path );
   g_string_free( out, TRUE );
   return ok;
 }
@@ -654,7 +649,7 @@ write_machine_info_key( const gchar  *key,
 static gboolean
 rcl_hostname_is_valid( const gchar *name )
 {
-  gsize len, i;
+  gsize len, i, label_len = 0;
 
   if( !name )
     return FALSE;
@@ -663,16 +658,25 @@ rcl_hostname_is_valid( const gchar *name )
   if( len == 0 || len > HOST_NAME_MAX )
     return FALSE;
 
-  if( name[0] == '.' || name[len - 1] == '.' )
-    return FALSE;
-
   for( i = 0; i < len; i++ )
   {
     gchar c = name[i];
-    if( !( g_ascii_isalnum(c) || c == '-' || c == '.' ) )
+
+    if( c == '.' )
+    {
+      if( label_len == 0 || name[i - 1] == '-' )
+        return FALSE;
+      label_len = 0;
+      continue;
+    }
+    if( !( g_ascii_isalnum( c ) || c == '-' ) )
+      return FALSE;
+    if( label_len == 0 && c == '-' )
+      return FALSE;
+    if( ++label_len > 63 )
       return FALSE;
   }
-  return TRUE;
+  return label_len > 0 && name[len - 1] != '-';
 }
 
 /* --------------------------------------------------------------------------
@@ -860,6 +864,10 @@ do_set_static_hostname( RclHostnameDaemon *daemon, const gchar *name,
     }
     g_free( content );
 
+    if( g_chmod( RCL_HOSTNAME_FILE, 0644 ) != 0 )
+      g_warning( "chmod(%s, 0644) failed: %s", RCL_HOSTNAME_FILE,
+                 g_strerror( errno ) );
+
     if( sethostname( name, strlen(name) ) != 0 )
       g_warning( "sethostname(%s) failed: %s", name, g_strerror(errno) );
   }
@@ -915,16 +923,64 @@ do_set_machine_info( RclHostnameDaemon *daemon, const gchar *key,
   g_dbus_method_invocation_return_value( invocation, NULL );
 }
 
+/* Parse a canonical 36-character UUID (8-4-4-4-12, hex digits) into its 16
+   raw bytes.  Returns FALSE for anything else. */
+static gboolean
+parse_uuid_text( const gchar *str, guchar out[16] )
+{
+  gsize i, n = 0;
+
+  if( !str || strlen( str ) != 36 )
+    return FALSE;
+
+  for( i = 0; i < 36; )
+  {
+    if( i == 8 || i == 13 || i == 18 || i == 23 )
+    {
+      if( str[i] != '-' )
+        return FALSE;
+      i++;
+      continue;
+    }
+    if( !g_ascii_isxdigit( str[i] ) || !g_ascii_isxdigit( str[i + 1] ) )
+      return FALSE;
+    out[n++] = (guchar)( ( g_ascii_xdigit_value( str[i] ) << 4 ) |
+                           g_ascii_xdigit_value( str[i + 1] ) );
+    i += 2;
+  }
+  return n == 16;
+}
+
 static void
 do_get_product_uuid( GDBusMethodInvocation *invocation )
 {
   gchar          *uuid_str = read_dmi( RCL_DMI_PRODUCT_UUID );
+  guchar          raw[16];
   GVariantBuilder bytes;
+  gsize           i;
+
+  if( uuid_str[0] == '\0' )
+  {
+    g_free( uuid_str );
+    g_dbus_method_invocation_return_error( invocation,
+      G_DBUS_ERROR, G_DBUS_ERROR_NOT_SUPPORTED,
+      "Product UUID is not available on this system" );
+    return;
+  }
+
+  if( !parse_uuid_text( uuid_str, raw ) )
+  {
+    g_free( uuid_str );
+    g_dbus_method_invocation_return_error( invocation,
+      G_DBUS_ERROR, G_DBUS_ERROR_FAILED,
+      "Product UUID is malformed" );
+    return;
+  }
+  g_free( uuid_str );
 
   g_variant_builder_init( &bytes, G_VARIANT_TYPE("ay") );
-  for( gsize i = 0; uuid_str[i]; i++ )
-    g_variant_builder_add( &bytes, "y", (guchar)uuid_str[i] );
-  g_free( uuid_str );
+  for( i = 0; i < 16; i++ )
+    g_variant_builder_add( &bytes, "y", raw[i] );
 
   g_dbus_method_invocation_return_value( invocation,
     g_variant_new("(ay)", &bytes) );
