@@ -20,7 +20,7 @@ def require(condition, message):
 
 # D-Bus setters authorize the actual system-bus caller before privileged work.
 for fragment, message in [
-    ("polkit_system_bus_name_new ( sender )", "authorization must bind to the D-Bus caller"),
+    ("polkit_system_bus_name_new", "authorization must bind to the D-Bus caller"),
     ("polkit_authority_check_authorization(", "mutating calls must go through PolicyKit"),
     ("POLKIT_CHECK_AUTHORIZATION_FLAGS_ALLOW_USER_INTERACTION", "interactive calls must permit a polkit agent"),
     ('"org.freedesktop.DBus.Error.AccessDenied"', "denials must return AccessDenied"),
