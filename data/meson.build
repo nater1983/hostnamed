@@ -32,7 +32,7 @@ else
 endif
 
 dbus_service_conf = configuration_data()
-dbus_service_conf.set('SBINDIR', join_paths(prefix, get_option('libexecdir')))
+dbus_service_conf.set('LIBEXECDIR', join_paths(prefix, get_option('libexecdir')))
 
 configure_file(
   input         : 'org.freedesktop.hostname1.service.in',
