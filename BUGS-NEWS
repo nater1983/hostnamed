@@ -2,33 +2,25 @@ NEWS
 ====
 
 This file summarizes user-visible changes to hostnamed, most recent first.
-See the NEWS file for the full changelog.
+See NEWS for the complete release history.
 
-0.3.0 (2026-10-14)
+0.3.0 (2026-10-16)
 ------------------
-* Hostname-setting and machine-info changes from hostnamectl now use the
-  system D-Bus API; the daemon performs persistence and polkit authorization.
-* hostnamectl set-hostname no longer overwrites PRETTY_HOSTNAME unless
-  the caller explicitly requests a pretty-hostname change.
-* polkit is a required build dependency; the -Dpolkit option has been removed.
-* Hostname validation follows strict RFC 1123 label rules for static and
-  transient hostnames.
-* GetProductUUID returns 16 raw UUID bytes and reports NotFound for missing,
-  malformed, or placeholder UUIDs.
-* Immutable hostname1 properties are marked EmitsChangedSignal=const in both
-  the installed interface XML and embedded introspection data.
-* Root polkit authorization is scoped to hostname1 actions; hostname
-  operations use stable D-Bus errors and refresh property state on persistence
-  error paths.
-* Fixed duplicate/spurious Chassis and IconName PropertiesChanged entries.
-* IconName follows the effective chassis; DefaultHostname and the default
-  HostnameSource value are now populated.
-* SetPrettyHostname preserves free-form dotted names instead of treating every
-  dot as an FQDN separator.
-* Interactive polkit challenges return
-  org.freedesktop.DBus.Error.InteractiveAuthorizationRequired.
-* Hardware model, vendor, serial, and chassis detection now have improved DMI
-  fallback and device-tree support.
+* Hostname and machine-info updates from hostnamectl use the system D-Bus
+  API. The daemon performs privileged writes and polkit authorization.
+* set-hostname preserves PRETTY_HOSTNAME unless a pretty-hostname change is
+  explicitly requested.
+* Atomic machine-info updates preserve unrelated keys, serialize cooperating
+  writers with an advisory lock, and install the replacement file with mode
+  0644.
+* UUID parsing requires canonical 36-character UUID syntax and rejects
+  all-zero and all-0xFF placeholder values.
+* Hardware identification skips common DMI placeholder strings and uses
+  device-tree data as a fallback where available.
+* Improved regression checks for privileged writes, authorization wiring,
+  UUID validation, file modes, packaging, and hostnamectl's D-Bus usage.
+* polkit is a required build dependency; the obsolete -Dpolkit option has
+  been removed.
 
 0.2.6 (2026-06-20)
 ------------------
@@ -57,45 +49,32 @@ See the NEWS file for the full changelog.
 BUGS
 ====
 
-Known issues and limitations for version 0.3.0. These are not all release
-blockers; some are design limitations or areas that still need testing.
-Please report issues at https://github.com/nater1983/hostnamed/issues
+Known issues and areas that still need target-system verification for 0.3.0.
+These items are not necessarily release blockers. Please report issues at
+https://github.com/nater1983/hostnamed/issues
 
-* GetProductUUID and GetHardwareSerial default to the auth_admin polkit
-  policy. This is stricter than systemd-hostnamed's upstream default and may
-  surprise users porting polkit rules. Add local rules if unattended,
-  non-interactive reads are required.
-* The polkit authority handle is obtained at startup. If polkitd is not
-  available then, the first later authorization may require a lazy re-fetch
-  and introduce a one-time delay.
-* write_machine_info_key() performs read-modify-write without advisory locking
-  against another writer editing the file concurrently; concurrent updates
-  can race.
-* PrettyHostname derivation from an FQDN has not been exhaustively tested for
-  IDN/punycode labels and unusual dotted input.
-* CI builds the project and checks registered Meson tests and XML well-formedness,
-  but there is not yet a comprehensive automated integration suite covering
-  a live system bus, polkit agents, authorization denial, and filesystem failures.
-* Changes made by external tools are detected through inotify. Very rapid
+* End-to-end authorization should be verified on the target distribution with
+  both an authorized wheel user and an unauthorized unprivileged user. The
+  regression tests inspect authorization wiring but do not replace testing
+  with the real system bus, polkit daemon, and an authentication agent.
+* Interactive authorization depends on a working polkit authentication agent
+  in the caller's desktop session. Headless sessions may be unable to complete
+  an interactive challenge.
+* Recovery after the system D-Bus daemon restarts has not been fully validated
+  end-to-end; test name loss and re-acquisition with the target service setup.
+* External edits to watched files are detected through inotify. Very rapid
   successive writes may be coalesced, and behavior under heavy inotify queue
   load has not been stress-tested.
-* Wheel-group membership changes are evaluated using the caller's session
-  credentials; users may need to start a new login session for membership
-  changes to take effect.
-* Virtualization is not detected, so Chassis is not inferred as "vm" or
-  "container"; the property is based on machine-info, SMBIOS, and device-tree
-  data.
 * The DMI placeholder list is finite; unknown firmware template strings may
-  still be reported. Device-tree HardwareVendor is the lowercase compatible
-  vendor prefix rather than a marketing name, and some boards do not provide
-  chassis-type.
-* Recovery after the system D-Bus daemon restarts has not been validated
-  end-to-end; the daemon's name-loss/re-acquisition path may not recover
-  reliably and should be tested under the target service supervisor.
+  still be reported. Device-tree HardwareVendor uses the vendor prefix from
+  the first compatible entry rather than a marketing name, and some boards do
+  not provide a chassis-type property.
+* Virtualization is not inferred as "vm" or "container". Chassis is derived
+  from machine-info, SMBIOS, and device-tree data.
 * machine-info parsing supports double-quoted values and currently uses the
   first matching key if duplicate keys exist.
 * Slackware startup behavior for fully qualified values in /etc/HOSTNAME should
   be verified against the target system's rc.S; hostnamed passes the configured
   static hostname to sethostname().
-* Translation loading by the daemon has not been verified; bindtextdomain()
-  may be needed for translations under po/.
+* Translation loading by the daemon has not been verified on installed systems;
+  confirm that translations under the configured locale directory are found.
