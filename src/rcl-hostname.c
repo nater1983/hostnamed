@@ -731,7 +731,6 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
     gchar *usable = first_usable_dup (bios, NULL, NULL);
     UPDATE_STR_PROP (firmware_version, usable, "FirmwareVersion");
     g_free (bios);
-    g_free (usable);
   }
 
   /* FirmwareDate is type 't' (uint64 µs since epoch) per the spec */
