@@ -694,6 +694,8 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
         *slots[bi]=g_variant_ref_sink(nv);
         g_variant_builder_add(&changed_props,"{sv}",names[bi],g_variant_ref(*slots[bi]));
         any_changed=TRUE;
+      } else {
+        g_variant_unref(nv);
       }
       g_free(id);
     }
@@ -2074,16 +2076,26 @@ rcl_hostname_daemon_finalize( GObject *object )
   g_free( priv->chassis );
   g_free( priv->deployment );
   g_free( priv->location );
+  g_strfreev( priv->tags );
   g_free( priv->kernel_name );
   g_free( priv->kernel_release );
   g_free( priv->kernel_version );
   g_free( priv->os_pretty_name );
+  g_free( priv->os_fancy_name );
   g_free( priv->os_cpe_name );
   g_free( priv->os_home_url );
+  g_free( priv->os_image_id );
+  g_free( priv->os_image_version );
   g_free( priv->hw_vendor );
   g_free( priv->hw_model );
+  g_free( priv->hw_sku );
+  g_free( priv->hw_version );
   g_free( priv->firmware_version );
-  /* firmware_date_usec is a guint64 scalar, no g_free needed */
+  g_free( priv->firmware_vendor );
+  g_free( priv->chassis_asset_tag );
+  g_clear_pointer( &priv->machine_id, g_variant_unref );
+  g_clear_pointer( &priv->boot_id, g_variant_unref );
+  /* Scalar properties need no heap cleanup. */
 
   G_OBJECT_CLASS(rcl_hostname_daemon_parent_class)->finalize(object);
 }
