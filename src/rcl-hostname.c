@@ -692,7 +692,7 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
       if(!*slots[bi] || !g_variant_equal(*slots[bi],nv)) {
         g_clear_pointer(slots[bi],g_variant_unref);
         *slots[bi]=g_variant_ref_sink(nv);
-        g_variant_builder_add(&changed_props,"{sv}",names[bi],g_variant_ref(*slots[bi]));
+        g_variant_builder_add(&changed_props,"{sv}",names[bi],*slots[bi]);
         any_changed=TRUE;
       } else {
         g_variant_unref(nv);
