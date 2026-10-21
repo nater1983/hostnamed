@@ -2,7 +2,12 @@ NEWS
 ====
 
 This file summarizes user-visible changes to hostnamed, most recent first.
-See NEWS for the complete release history.
+See ChangeLog.md for the complete release history.
+
+0.3.1 (2026-10-21)
+------------------
+* Updated release metadata and man-page version strings for 0.3.1.
+* Corrected the packaged release-history reference to ChangeLog.md.
 
 0.3.0 (2026-10-16)
 ------------------
@@ -49,7 +54,7 @@ See NEWS for the complete release history.
 BUGS
 ====
 
-Known issues and areas that still need target-system verification for 0.3.0.
+Known issues and areas that still need target-system verification for 0.3.1.
 These items are not necessarily release blockers. Please report issues at
 https://github.com/nater1983/hostnamed/issues
 
