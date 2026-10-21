@@ -2,6 +2,13 @@
 
 All notable changes to `hostnamed` are documented here, newest release first.
 
+## [0.3.1] - 2026-10-21
+
+### Release updates
+- Updated the project, SlackBuild, and man-page version metadata to 0.3.1.
+- Corrected the packaged documentation list so it includes `ChangeLog.md` and does not reference the absent `NEWS` file.
+- Updated `BUGS-NEWS` to refer to `ChangeLog.md` for release history.
+
 ## [0.3.0] - 2026-10-16
 
 ### Security and persistence
