@@ -35,3 +35,12 @@ test(
     join_paths(meson.project_source_root(), 'po', 'meson.build'),
   ],
 )
+
+test(
+  'hardware-hostname-fallbacks',
+  python,
+  args : [
+    files('test-hardware-hostname-fallbacks.py'),
+    join_paths(meson.project_source_root(), 'src', 'rcl-hostname.c'),
+  ],
+)
