@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Chassis and machine-info handling
+- Removed `vm` and `container` as inferred/accepted chassis types. Virtualization
+  detection remains separate from chassis classification.
+- Chassis fallback continues to use `CHASSIS` from machine-info, then SMBIOS
+  chassis type, then the device-tree chassis-type property.
+- Kept machine-info parsing deterministic: double-quoted values are unquoted,
+  and the first matching key is used when duplicate keys are present.
+
 All notable changes to `hostnamed` are documented here, newest release first.
 
 ## [0.3.1] - 2026-10-21
