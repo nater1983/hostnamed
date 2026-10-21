@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Localization
+- Initialize gettext in the daemon using the Meson-configured locale directory
+  and UTF-8 catalog encoding.
+- Add a regression test for daemon gettext initialization and compiled catalog
+  installation paths.
+
 ### Authorization diagnostics and integration testing
 - Clarify the interactive-authorization error so clients know that a polkit
   authentication agent must be available in the caller's session.
