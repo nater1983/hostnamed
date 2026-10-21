@@ -24,3 +24,14 @@ test(
   find_program('sh'),
   args : ['-n', files('test-polkit-integration.sh')],
 )
+
+test(
+  'gettext-installation-wiring',
+  python,
+  args : [
+    files('test-gettext-config.py'),
+    join_paths(meson.project_source_root(), 'src', 'main.c'),
+    join_paths(meson.project_source_root(), 'meson.build'),
+    join_paths(meson.project_source_root(), 'po', 'meson.build'),
+  ],
+)
