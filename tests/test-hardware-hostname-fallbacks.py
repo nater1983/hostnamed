@@ -13,9 +13,10 @@ placeholder_start = source.index("rcl_dmi_is_placeholder( const gchar *v )")
 placeholder_end = source.index("/* First usable (non-empty, non-placeholder)", placeholder_start)
 placeholder = source[placeholder_start:placeholder_end]
 for pattern in (
-    '"to be filled"', '"default string"', '"system manufacturer"',
+    '"fill"', '"default"', '"system manufacturer"',
     '"system product name"', '"not specified"', '"not applicable"',
-    '"unknown"', '"undefined"', '"productconfigid"', '"serial number"',
+    '"not set"', '"not defined"', '"unspecified"', '"placeholder"',
+    '"unknown"', '"undefined"', '"invalid"', '"productconfigid"', '"serial number"',
 ):
     require(pattern in placeholder, f"placeholder pattern missing: {pattern}")
 
