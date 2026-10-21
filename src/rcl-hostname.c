@@ -307,41 +307,45 @@ read_key_value_file( const gchar *path, const gchar *key )
   gchar **lines;
   gchar  *result   = NULL;
   gsize   i;
-  gchar   prefix[256];
+  gchar  *prefix;
 
   if( !g_file_get_contents( path, &contents, NULL, NULL ) )
     return NULL;
 
-  g_snprintf( prefix, sizeof(prefix), "%s=", key );
+  prefix = g_strdup_printf( "%s=", key );
   lines = g_strsplit( contents, "\n", -1 );
 
   for( i = 0; lines[i] != NULL; i++ )
   {
-    if( g_str_has_prefix( lines[i], prefix ) )
-    {
-      gchar *val = lines[i] + strlen( prefix );
+    gchar *line = g_strstrip( lines[i] );
+    gchar *val;
+    gsize  len;
 
-      /* Strip surrounding double-quotes if present */
-      if( val[0] == '"' )
-      {
-        gsize len = strlen( val );
-        if( len >= 2 && val[len-1] == '"' )
-        {
-          result = g_strndup( val + 1, len - 2 );
-        }
-        else
-        {
-          result = g_strdup( val + 1 );
-        }
-      }
-      else
-      {
-        result = g_strdup( val );
-      }
-      break;
+    if( !g_str_has_prefix( line, prefix ) )
+      continue;
+
+    val = g_strdup( line + strlen( prefix ) );
+    g_strstrip( val );
+    len = strlen( val );
+
+    /* machine-info values may be enclosed in double quotes. */
+    if( len >= 2 && val[0] == '"' && val[len - 1] == '"' )
+    {
+      gchar *unquoted = g_strndup( val + 1, len - 2 );
+      g_free( val );
+      val = unquoted;
     }
+
+    /*
+     * Keep scanning instead of stopping at the first match. If a key is
+     * duplicated, the last occurrence wins, which allows later entries to
+     * override earlier ones.
+     */
+    g_free( result );
+    result = val;
   }
 
+  g_free( prefix );
   g_strfreev( lines );
   g_free( contents );
   return result;
