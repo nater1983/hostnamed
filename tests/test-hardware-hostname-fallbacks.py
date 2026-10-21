@@ -9,7 +9,7 @@ def require(condition, message):
     if not condition:
         raise AssertionError(message)
 
-placeholder_start = source.index("rcl_dmi_is_placeholder ( const gchar *v )")
+placeholder_start = source.index("rcl_dmi_is_placeholder( const gchar *v )")
 placeholder_end = source.index("/* First usable (non-empty, non-placeholder)", placeholder_start)
 placeholder = source[placeholder_start:placeholder_end]
 for pattern in (
