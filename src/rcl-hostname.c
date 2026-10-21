@@ -1982,6 +1982,9 @@ rcl_daemon_startup( RclDaemon *daemon, GDBusConnection *connection )
   GDBusInterfaceInfo       *iface_info;
   GError *error = NULL;
 
+  /* A bus restart requires a fresh PolKit authority as well. */
+  g_clear_object( &priv->authority );
+
   priv->connection    = g_object_ref( connection );
   priv->introspection = g_dbus_node_info_new_for_xml(
                           hostname1_introspection_xml, &error );
@@ -2044,6 +2047,7 @@ rcl_daemon_shutdown( RclDaemon *daemon )
   }
 
   g_clear_object( &priv->connection );
+  g_clear_object( &priv->authority );
 
   if( priv->introspection )
   {
