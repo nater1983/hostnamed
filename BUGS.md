@@ -5,13 +5,11 @@ verification for hostnamed 0.3.1. These items are not necessarily release
 blockers. Please report issues at
 https://github.com/nater1983/hostnamed/issues
 
-- End-to-end authorization should be verified on the target distribution with
-  both an authorized wheel user and an unauthorized unprivileged user. The
-  regression tests inspect authorization wiring but do not replace testing
-  with the real system bus, polkit daemon, and an authentication agent.
-- Interactive authorization depends on a working polkit authentication agent
-  in the caller's desktop session. Headless sessions may be unable to complete
-  an interactive challenge.
+- Run `tests/test-polkit-integration.sh WHEEL_USER UNPRIVILEGED_USER` as
+  root on the installed target system to verify live system-bus authorization
+  for a wheel user and denial for a non-wheel user. Interactive prompts require
+  a polkit authentication agent in the caller's desktop session; headless
+  sessions should use non-interactive authorization or provide an agent.
 - The DMI placeholder list is finite; unknown firmware template strings may
   still be reported. Device-tree HardwareVendor uses the vendor prefix from
   the first compatible entry rather than a marketing name, and some boards do
