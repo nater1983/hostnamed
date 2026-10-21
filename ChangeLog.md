@@ -88,28 +88,54 @@ All notable changes to `hostnamed` are documented here, newest release first.
   script and Indonesian and Estonian updates.
 - Removed obsolete `sbindir` paths from the build.
 
+## Version history note: 0.2.1–0.2.5
+
+The available Git history does not contain separate version bumps, release
+tags, or release records for 0.2.1, 0.2.2, 0.2.3, 0.2.4, or 0.2.5. The recorded
+version transition is directly from 0.2.0 to 0.2.6 on 2026-06-20. Therefore,
+the development commits in this interval are documented under 0.2.6 where
+their changes are supported by the commit history; they are not assigned to
+invented intermediate releases.
+
 ## [0.2.6] - 2026-06-20
 
-This is the first 0.2.x release with a separately recorded release entry in
-the available project changelog. The repository history confirms the version
-jump from 0.2.0 to 0.2.6; individual release notes for 0.2.1 through 0.2.5
-were not preserved in the current changelog, so changes below are recorded
-under 0.2.6 only where the history supports that attribution.
+### Security and authorization
+- Fixed a Polkit authorization-rule logic error that could bypass the intended
+  privileged-group check, and corrected JSON escaping in the D-Bus interface
+  (contribution merged from PR #1).
+- Reworked Polkit authorization to use asynchronous callbacks, preventing the
+  authentication-agent dialog from blocking the daemon's main loop.
+- Added dedicated Polkit actions for `GetProductUUID` and
+  `GetHardwareSerial`, instead of reusing hostname-setting authorization.
+  Custom Polkit rules that explicitly authorize only hostname-setting actions
+  may need corresponding rules for these hardware-information actions.
+- Added defence-in-depth validation inside the machine-info writer, in
+  addition to caller-side validation.
+- Refactored the Polkit rule template and privileged-group handling.
 
-### Security
-- Fixed a polkit authorization bypass and a D-Bus JSON-escaping bug.
-- Reworked polkit authorization checks to run asynchronously so authentication
-  prompts do not block the daemon's main loop.
-- Added dedicated polkit actions for `GetProductUUID` and
-  `GetHardwareSerial`.
-- Added validation directly in the machine-info writer.
+### Hostname and machine information
+- Added configurable paths for the static hostname file, os-release, and
+  machine-info, avoiding source edits for alternate filesystem layouts.
+- Updated the daemon's file-monitor and configuration references to use the
+  configured paths. The history also records intermediate path-configuration
+  corrections during development.
+- Added direct machine-info property-cache updates and immediate
+  `PropertiesChanged` signals after successful writes, rather than relying
+  solely on a later inotify-triggered full resynchronization.
+- Added pretty-hostname sanitization to derive a short display label when a
+  desktop client sends a fully qualified hostname as the pretty hostname.
 
-### Changed
-- Cleaned up the SlackBuild and removed leftover `localectl` references.
-- Added configurable paths for os-release and machine-info.
-- Added direct property-cache updates for machine-info keys.
-- Improved pretty-hostname derivation from fully qualified hostname input.
-- Refactored polkit rules and authorization handling.
+### Build, documentation, and packaging
+- Added the GPL-2.0 license file and an AUTHORS file.
+- Added user-facing NEWS/release notes and known-issues documentation.
+- Removed the unrelated `localectl` script and its leftover SlackBuild
+  references; locale management belongs to the separate `localed` service.
+- Added manual pages for `hostnamectl(1)` and `hostnamed(8)`, wired them into
+  the Meson build, and configured the SlackBuild to install them under
+  `/usr/man`.
+- Updated the SlackBuild to compress installed manual pages and adjust
+  handling of manual-page symlinks.
+- Added the release documentation to the package's documentation directory.
 
 ## [0.2.0] - 2026-06-19
 
