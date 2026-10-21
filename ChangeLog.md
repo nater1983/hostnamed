@@ -128,6 +128,15 @@ All notable changes to `hostnamed` are documented here, newest release first.
   handling of manual-page symlinks.
 - Added the release documentation to the package's documentation directory.
 
+## Historical development: 0.2.1–0.2.5
+
+The available Git history does not contain separate version bumps, release
+tags, or release records for 0.2.1 through 0.2.5. The recorded version
+transition is from 0.2.0 to 0.2.6 on 2026-06-20. Development commits whose
+changes can be verified are summarized in the 0.2.6 entry above; the current
+history does not support assigning those changes to individual intermediate
+versions.
+
 ## [0.2.0] - 2026-06-19
 
 - Bumped the project version from 0.1.0 to 0.2.0.
@@ -137,15 +146,6 @@ All notable changes to `hostnamed` are documented here, newest release first.
   epoch.
 - Updated machine-info property-cache values and emitted
   `PropertiesChanged` directly.
-
-## Historical development: 0.2.1–0.2.5
-
-The available Git history does not contain separate version bumps, release
-tags, or release records for 0.2.1 through 0.2.5. The recorded version
-transition is from 0.2.0 to 0.2.6 on 2026-06-20. Development commits whose
-changes can be verified are summarized in the 0.2.6 entry above; the current
-history does not support assigning those changes to individual intermediate
-versions.
 
 ## [0.1.0] - 2026-05-31 to 2026-06-17
 
