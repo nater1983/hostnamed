@@ -6,7 +6,7 @@
 #
 # Copyright 2025, GPLv2+
 
-VALID_CHASSIS=(desktop laptop server tablet handset watch embedded vm container convertible)
+VALID_CHASSIS=(desktop laptop server tablet handset watch embedded convertible)
 
 # ---------------------------------------------------------------------------
 # Helpers
