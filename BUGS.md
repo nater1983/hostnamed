@@ -5,11 +5,4 @@ verification for hostnamed 0.3.1. These items are not necessarily release
 blockers. Please report issues at
 https://github.com/nater1983/hostnamed/issues
 
-- The DMI placeholder list is finite; unknown firmware template strings may
-  still be reported. Device-tree HardwareVendor uses the vendor prefix from
-  the first compatible entry rather than a marketing name, and some boards do
-  not provide a chassis-type property.
-- Slackware startup behavior for fully qualified values in /etc/HOSTNAME should
-  be verified against the target system's rc.S; hostnamed passes the configured
-  static hostname to sethostname().
 
