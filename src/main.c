@@ -486,6 +486,14 @@ gint main(gint argc, gchar **argv)
 
   setlocale(LC_ALL, "");
 
+  /*
+   * Bind gettext to Meson's configured locale directory so installed
+   * catalogs are found when the daemon starts.
+   */
+  bindtextdomain(GETTEXT_PACKAGE, LOCALEDIR);
+  bind_textdomain_codeset(GETTEXT_PACKAGE, "UTF-8");
+  textdomain(GETTEXT_PACKAGE);
+
   context = g_option_context_new("");
   g_option_context_add_main_entries(context, options, NULL);
 
