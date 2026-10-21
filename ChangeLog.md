@@ -1,122 +1,75 @@
 # Changelog
 
-## [Unreleased]
-
-### Hardware identity and Slackware hostname behavior
-- Expanded DMI placeholder filtering to catch common firmware-template patterns,
-  not only a finite list of exact strings.
-- Stopped presenting a device-tree compatible vendor prefix as a marketing
-  HardwareVendor name. When DMI vendor fields are unusable, HardwareVendor is
-  empty; HardwareModel can still fall back to the device-tree model.
-- Added regression checks that dotted static hostnames are passed unchanged to
-  sethostname() and remain valid as RFC 1123 fully qualified names.
-
-### Localization
-- Initialize gettext in the daemon using the Meson-configured locale directory
-  and UTF-8 catalog encoding.
-- Add a regression test for daemon gettext initialization and compiled catalog
-  installation paths.
-
-### Authorization diagnostics and integration testing
-- Clarify the interactive-authorization error so clients know that a polkit
-  authentication agent must be available in the caller's session.
-- Add a target-system integration script that checks wheel authorization and
-  non-wheel denial against the live system D-Bus and polkit setup.
-
-### D-Bus recovery and configuration monitoring
-- Refresh the PolKit authority when the D-Bus object is restarted, and release
-  the cached authority during daemon shutdown.
-- Reconcile hostname and machine-info properties every two seconds in addition
-  to directory monitoring, so missed or coalesced filesystem events do not
-  leave D-Bus properties stale indefinitely.
-
-## [Unreleased]
-
-### Chassis and machine-info handling
-- Removed `vm` and `container` as inferred/accepted chassis types. Virtualization
-  detection remains separate from chassis classification.
-- Chassis fallback continues to use `CHASSIS` from machine-info, then SMBIOS
-  chassis type, then the device-tree chassis-type property.
-- Kept machine-info parsing deterministic: double-quoted values are unquoted,
-  and the first matching key is used when duplicate keys are present.
-
 All notable changes to `hostnamed` are documented here, newest release first.
 
 ## [0.3.1] - 2026-10-21
 
 ### Release and documentation
-- Updated the project, SlackBuild, and man-page version metadata to 0.3.1.
-- Consolidated release history in `ChangeLog.md`; `BUGS-NEWS` is obsolete and is replaced by `BUGS.md` for known issues.
-- Updated the SlackBuild documentation list to package `ChangeLog.md` and `BUGS.md`.
+- Updated project, SlackBuild, and man-page version metadata to 0.3.1.
+- Consolidated release history in `ChangeLog.md`; replaced the obsolete
+  `BUGS-NEWS` release/issue document with `BUGS.md` for known issues.
+- Updated the SlackBuild documentation list to package `ChangeLog.md` and
+  `BUGS.md`.
 
-## [0.3.0] - 2026-10-16
+### Chassis and machine-info handling
+- Kept `vm` and `container` out of chassis classification; virtualization
+  detection is separate from chassis type.
+- Resolve chassis fallback in order: machine-info `CHASSIS`, SMBIOS chassis
+  type, then the device-tree chassis-type property.
+- Parse double-quoted machine-info values and resolve duplicate keys using
+  the last matching entry, so later edits take precedence.
 
-### Security and persistence
-- Routed hostname and machine-info changes from `hostnamectl` through the
-  system D-Bus `org.freedesktop.hostname1` API. The daemon performs the
-  privileged file updates and polkit authorization; the shell client no longer
-  bypasses that authorization path with direct configuration-file writes.
-- Fixed `set-hostname` so changing the static/transient hostname does not
-  overwrite `PRETTY_HOSTNAME` unless a pretty-hostname change is explicitly
-  requested.
-- Hardened atomic replacement so the resulting file mode is selected
-  deliberately rather than inheriting `mktemp`'s restrictive mode. Machine
-  metadata writes install `/etc/machine-info` with mode `0644`.
-- Added advisory locking around machine-info read/modify/write updates to
-  serialize cooperating hostnamed writers and reduce lost updates.
-- Kept unrelated machine-info entries when updating a single key and retained
-  validation in the writer as defence in depth.
-- Tightened product UUID parsing to require canonical 36-character
-  `8-4-4-4-12` UUID syntax and reject all-zero and all-`FF` placeholder
-  values. Unavailable or invalid product UUIDs return a D-Bus error instead
-  of fabricated data.
+### D-Bus recovery and configuration monitoring
+- Refresh the Polkit authority after the system D-Bus connection/object is
+  restarted, and release the cached authority during daemon shutdown.
+- Reconcile hostname and machine-info properties periodically as well as
+  watching configuration files, so coalesced or missed inotify events do not
+  leave exported D-Bus properties stale indefinitely.
 
-### D-Bus and polkit
-- Kept hostname-setting operations behind the daemon's D-Bus methods so
-  authorization and persistence follow one path.
-- Scoped the root polkit authorization bypass to hostname1 actions rather than
-  granting unconditional success for unrelated actions.
-- Standardized hostname-operation errors and kept exported property state
-  synchronized on persistence error paths, including errors after an on-disk
-  replacement has taken effect.
-- Marked immutable hostname1 properties with `EmitsChangedSignal=const` in
-  both the shipped interface XML and embedded introspection data.
-- Interactive polkit challenges use
-  `org.freedesktop.DBus.Error.InteractiveAuthorizationRequired` when the
-  caller requests non-interactive authorization but an authentication prompt
-  could satisfy the action.
-- polkit is now a required build dependency. The obsolete `-Dpolkit` build
-  option and related conditional configuration were removed.
+### Authorization and Polkit
+- Improved the interactive-authorization diagnostic to explain that a
+  Polkit authentication agent must be available in the caller's session.
+- Added a target-system integration script to test authorization for a
+  `wheel` user and denial for an unauthorized unprivileged user against the
+  installed system D-Bus service and Polkit policy.
+- Registered a Meson check for the integration script's shell syntax.
 
-### Hostname behavior and hardware identification
-- Static and transient hostname validation follows strict RFC 1123 label
-  rules: labels must be 1–63 characters, cannot be empty, and cannot begin or
-  end with a hyphen.
-- `SetPrettyHostname` preserves free-form dotted names instead of truncating
-  every value at the first dot.
-- Fixed duplicate or spurious `Chassis` and `IconName` property-change
-  notifications by calculating effective values before updating the cache.
-- `IconName` follows the effective chassis, including chassis data from
-  machine-info when no explicit icon is configured.
-- Populated `DefaultHostname` from os-release where available, with
-  `localhost` as the fallback; `HostnameSource` can report the default
-  hostname state.
-- Improved hardware identification fallback order and skip common DMI
-  placeholder strings. Hardware model and vendor can fall back to device-tree
-  data on platforms without usable DMI values.
-- Hardware serial lookup tries DMI product, board, and chassis serial values
-  before falling back to the device-tree serial-number property.
-- Expanded chassis mappings for server, embedded, and desktop form factors;
-  kept the Slackware `hostnamectl` implementation aligned with the daemon.
+### Localization
+- Initialize gettext after setting the process locale, bind the daemon's
+  translation domain to Meson's configured locale directory, select UTF-8
+  catalog encoding, and activate the domain.
+- Added a regression test for gettext initialization order and the configured
+  locale/catalog installation paths.
 
-### Tests and packaging
-- Expanded security-invariant and filesystem/packaging regression checks for
-  machine-info permissions and updates, hostnamectl's D-Bus usage, polkit
-  authorization wiring, UUID validation, hardware fallbacks, and install
-  layout.
-- CI configures and compiles the project, runs registered Meson tests,
-  syntax-checks the test harnesses and `hostnamectl`, validates shipped XML,
-  and checks staged installation and packaging.
+### Hardware identification
+- Broadened DMI placeholder detection beyond a finite list of exact strings
+  to catch common firmware-template values such as default, fill, unknown,
+  undefined, invalid, and placeholder markers.
+- Stopped treating a device-tree `compatible` vendor prefix as a marketing
+  vendor name. `HardwareVendor` now prefers usable DMI system/board vendor
+  fields and remains empty if neither is usable.
+- Kept `HardwareModel` fallback through DMI product name, board name, and
+  device-tree model; hardware serial fallback continues to use device-tree
+  serial data when DMI serial fields are unavailable.
+- Kept chassis classification independent of virtualization and avoid guessing
+  chassis type when machine-info, SMBIOS, and device-tree data are unavailable.
+
+### Hostname behavior
+- Verified in code and regression checks that fully qualified static hostname
+  values are passed unchanged to `sethostname()` and accepted by the hostname
+  validator when their labels satisfy RFC 1123 rules.
+- This documents the daemon-side behavior; target-system Slackware `rc.S`
+  boot behavior still needs to be verified on an installed system.
+
+### Regression tests
+- Added `hardware-hostname-fallbacks` checks for DMI placeholder patterns,
+  vendor/model fallback behavior, and fully qualified static hostnames.
+- Updated `filesystem-and-packaging-invariants` to remove its obsolete
+  expectation that `HardwareVendor` falls back to a device-tree compatible
+  prefix, and instead assert DMI-only vendor fallback plus device-tree model
+  fallback.
+- Added gettext initialization/catalog-path checks and retained security,
+  filesystem/packaging, and Polkit integration test coverage.
 
 ## [0.2.7.1] - 2026-06-27 to 2026-09-01
 
