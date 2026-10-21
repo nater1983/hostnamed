@@ -395,19 +395,25 @@ rcl_dmi_is_placeholder( const gchar *v )
   {
     gchar *lower = g_ascii_strdown( t, -1 );
 
-    if( strstr( lower, "to be filled" ) ||
-        strstr( lower, "default string" ) ||
+    if( strstr( lower, "fill" ) ||
+        strstr( lower, "default" ) ||
         strstr( lower, "system manufacturer" ) ||
         strstr( lower, "system product name" ) ||
         strstr( lower, "not specified" ) ||
         strstr( lower, "not applicable" ) ||
+        strstr( lower, "not set" ) ||
+        strstr( lower, "not defined" ) ||
+        strstr( lower, "unspecified" ) ||
+        strstr( lower, "placeholder" ) ||
         strstr( lower, "unknown" ) ||
         strstr( lower, "undefined" ) ||
+        strstr( lower, "invalid" ) ||
         strstr( lower, "o.e.m." ) ||
         strstr( lower, "type1productconfigid" ) ||
         strstr( lower, "productconfigid" ) ||
         strstr( lower, "serial number" ) ||
-        g_str_has_prefix( lower, "oem" ) )
+        g_str_has_prefix( lower, "oem" ) ||
+        ( lower[0] == '<' && lower[strlen(lower) - 1] == '>' ) )
       bad = TRUE;
 
     g_free( lower );
