@@ -247,7 +247,7 @@ rcl_chassis_is_known( const gchar *c )
 {
   static const gchar *const known[] =
     { "desktop", "laptop", "convertible", "server", "tablet", "handset",
-      "watch", "embedded", "vm", "container", NULL };
+      "watch", "embedded", NULL };
   guint i;
 
   for( i = 0; c && known[i]; i++ )
@@ -267,8 +267,6 @@ rcl_chassis_to_icon_name( const gchar *c )
   if( g_strcmp0( c, "tablet"      ) == 0 ) return "computer-tablet";
   if( g_strcmp0( c, "handset"     ) == 0 ) return "phone";
   if( g_strcmp0( c, "watch"       ) == 0 ) return "watch";
-  if( g_strcmp0( c, "vm"          ) == 0 ) return "computer-vm";
-  if( g_strcmp0( c, "container"   ) == 0 ) return "container";
   return "computer";
 }
 
