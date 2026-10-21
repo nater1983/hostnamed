@@ -1617,7 +1617,7 @@ on_check_done( GObject *source, GAsyncResult *res, gpointer user_data )
     if( polkit_authorization_result_get_is_challenge( result ) )
       g_dbus_method_invocation_return_dbus_error( ctx->invocation,
         "org.freedesktop.DBus.Error.InteractiveAuthorizationRequired",
-        "Authentication is required to perform the requested action" );
+        "Authentication is required; retry interactively with a polkit authentication agent in the caller's session" );
     else
       g_dbus_method_invocation_return_dbus_error( ctx->invocation,
         "org.freedesktop.DBus.Error.AccessDenied",
