@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### D-Bus recovery and configuration monitoring
+- Refresh the PolKit authority when the D-Bus object is restarted, and release
+  the cached authority during daemon shutdown.
+- Reconcile hostname and machine-info properties every two seconds in addition
+  to directory monitoring, so missed or coalesced filesystem events do not
+  leave D-Bus properties stale indefinitely.
+
+## [Unreleased]
+
 ### Chassis and machine-info handling
 - Removed `vm` and `container` as inferred/accepted chassis types. Virtualization
   detection remains separate from chassis classification.
