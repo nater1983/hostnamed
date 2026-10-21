@@ -66,6 +66,7 @@ typedef struct RclState
   guint       watch_id;
   gboolean    has_name;
   guint       reconnect_id;
+  guint       reconcile_id;
   gboolean    exiting;
 } RclState;
 
@@ -84,6 +85,12 @@ rcl_state_free(RclState *state)
   {
     g_source_remove(state->reconnect_id);
     state->reconnect_id = 0;
+  }
+
+  if (state->reconcile_id)
+  {
+    g_source_remove(state->reconcile_id);
+    state->reconcile_id = 0;
   }
 
   if (state->watch_id)
@@ -325,6 +332,22 @@ rcl_main_log_handler_cb(const gchar    *log_domain,
 
 /* ───────────────────────────────────────────── */
 
+/*
+ * File monitors provide immediate updates, but events may be coalesced or
+ * lost under load. Periodically re-read configured files so cached D-Bus
+ * properties eventually converge on the actual on-disk state.
+ */
+static gboolean
+rcl_main_reconcile_files_cb(gpointer user_data)
+{
+  RclState *state = user_data;
+
+  if (!state->exiting)
+    rcl_daemon_sync_dbus_properties(RCL_HOSTNAME_DAEMON(state->daemon));
+
+  return G_SOURCE_CONTINUE;
+}
+
 static void
 rcl_file_watch_free(gpointer user_data, GClosure *closure)
 {
@@ -529,6 +552,14 @@ gint main(gint argc, gchar **argv)
 
   machineinfo_file = g_file_new_for_path(RCL_MACHINE_INFO_FILE);
   machineinfo_mon = rcl_monitor_config_file(state, RCL_MACHINE_INFO_FILE);
+
+  /*
+   * Reconcile every two seconds as a safety net for coalesced/lost monitor
+   * events and inotify queue pressure. The monitor remains the fast path.
+   */
+  state->reconcile_id = g_timeout_add_seconds(2,
+                                               rcl_main_reconcile_files_cb,
+                                               state);
 
   /* Acquire the D-Bus name for the first time */
   rcl_acquire_name(state);
