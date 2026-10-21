@@ -4,10 +4,10 @@ All notable changes to `hostnamed` are documented here, newest release first.
 
 ## [0.3.1] - 2026-10-21
 
-### Release updates
+### Release and documentation
 - Updated the project, SlackBuild, and man-page version metadata to 0.3.1.
-- Corrected the packaged documentation list so it includes `ChangeLog.md` and does not reference the absent `NEWS` file.
-- Updated `BUGS-NEWS` to refer to `ChangeLog.md` for release history.
+- Consolidated release history in `ChangeLog.md`; `BUGS-NEWS` is obsolete and is replaced by `BUGS.md` for known issues.
+- Updated the SlackBuild documentation list to package `ChangeLog.md` and `BUGS.md`.
 
 ## [0.3.0] - 2026-10-16
 
@@ -89,6 +89,12 @@ All notable changes to `hostnamed` are documented here, newest release first.
 - Removed obsolete `sbindir` paths from the build.
 
 ## [0.2.6] - 2026-06-20
+
+This is the first 0.2.x release with a separately recorded release entry in
+the available project changelog. The repository history confirms the version
+jump from 0.2.0 to 0.2.6; individual release notes for 0.2.1 through 0.2.5
+were not preserved in the current changelog, so changes below are recorded
+under 0.2.6 only where the history supports that attribution.
 
 ### Security
 - Fixed a polkit authorization bypass and a D-Bus JSON-escaping bug.
