@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Hardware identity and Slackware hostname behavior
+- Expanded DMI placeholder filtering to catch common firmware-template patterns,
+  not only a finite list of exact strings.
+- Stopped presenting a device-tree compatible vendor prefix as a marketing
+  HardwareVendor name. When DMI vendor fields are unusable, HardwareVendor is
+  empty; HardwareModel can still fall back to the device-tree model.
+- Added regression checks that dotted static hostnames are passed unchanged to
+  sethostname() and remain valid as RFC 1123 fully qualified names.
+
 ### Localization
 - Initialize gettext in the daemon using the Meson-configured locale directory
   and UTF-8 catalog encoding.
