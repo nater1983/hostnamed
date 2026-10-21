@@ -24,8 +24,8 @@ https://github.com/nater1983/hostnamed/issues
 - Chassis classification does not use "vm" or "container" as chassis
   types; virtualization detection is separate. Chassis fallback uses
   machine-info first, then SMBIOS, then the device-tree chassis-type property.
-- machine-info parsing strips surrounding double quotes and uses the first
-  matching key when duplicate keys are present.
+- machine-info duplicate keys are resolved by the last matching entry; values
+  may be enclosed in double quotes.
 - Slackware startup behavior for fully qualified values in /etc/HOSTNAME should
   be verified against the target system's rc.S; hostnamed passes the configured
   static hostname to sethostname().
