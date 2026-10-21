@@ -147,6 +147,45 @@ versions.
 - Updated machine-info property-cache values and emitted
   `PropertiesChanged` directly.
 
+## Historical development: 0.1.1–0.1.7
+
+The inspected Git history does not show separate version-bump commits or
+release tags for 0.1.1 through 0.1.7. The next recorded version bump is from
+0.1.0 to 0.2.0 on 2026-06-19. The changes below summarize development commits
+between the initial 0.1.0 implementation and that 0.2.0 version bump; they
+are not attributed to individual 0.1.x releases because the available history
+does not establish those boundaries.
+
+### Hostname handling and validation
+- Added configurable hostname-file and default-hostname settings, plus a
+  configurable privileged group.
+- Refactored the `hostnamectl` script for clearer argument parsing and
+  behavior, and continued updating its implementation.
+- Added input validation for hostnames and machine-info values.
+- Refined hostname state handling and logging through changes to the internal
+  state structure.
+- Improved the handling of hostname-setting authorization and simplified the
+  Polkit rule logic.
+
+### D-Bus and security policy
+- Refined the `org.freedesktop.hostname1` D-Bus security policy with explicit
+  interface access rules.
+- Updated Polkit rules for hostname management and adjusted authorization
+  handling in the daemon.
+- Continued refining the D-Bus interface and service implementation during
+  the initial development period.
+
+### Hardware and firmware information
+- Changed `FirmwareDate` to the D-Bus unsigned 64-bit type and added parsing
+  of firmware dates into microseconds since the Unix epoch.
+
+### Build and project configuration
+- Added and refined Meson build configuration and options.
+- Added the initial Slackware packaging script and updated packaging/config
+  defaults during development.
+- Added translation infrastructure and initial project documentation as part
+  of the first implementation.
+
 ## [0.1.0] - 2026-05-31 to 2026-06-17
 
 ### Added
