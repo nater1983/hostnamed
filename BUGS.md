@@ -21,11 +21,6 @@ https://github.com/nater1983/hostnamed/issues
   still be reported. Device-tree HardwareVendor uses the vendor prefix from
   the first compatible entry rather than a marketing name, and some boards do
   not provide a chassis-type property.
-- Chassis classification does not use "vm" or "container" as chassis
-  types; virtualization detection is separate. Chassis fallback uses
-  machine-info first, then SMBIOS, then the device-tree chassis-type property.
-- machine-info duplicate keys are resolved by the last matching entry; values
-  may be enclosed in double quotes.
 - Slackware startup behavior for fully qualified values in /etc/HOSTNAME should
   be verified against the target system's rc.S; hostnamed passes the configured
   static hostname to sethostname().
