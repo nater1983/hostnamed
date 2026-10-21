@@ -71,6 +71,75 @@ All notable changes to `hostnamed` are documented here, newest release first.
 - Added gettext initialization/catalog-path checks and retained security,
   filesystem/packaging, and Polkit integration test coverage.
 
+## [0.3.0] - 2026-10-16
+
+### Security and persistence
+- Routed hostname and machine-info changes from `hostnamectl` through the
+  system D-Bus `org.freedesktop.hostname1` API. The daemon performs the
+  privileged file updates and polkit authorization; the shell client no longer
+  bypasses that authorization path with direct configuration-file writes.
+- Fixed `set-hostname` so changing the static/transient hostname does not
+  overwrite `PRETTY_HOSTNAME` unless a pretty-hostname change is explicitly
+  requested.
+- Hardened atomic replacement so the resulting file mode is selected
+  deliberately rather than inheriting `mktemp`'s restrictive mode. Machine
+  metadata writes install `/etc/machine-info` with mode `0644`.
+- Added advisory locking around machine-info read/modify/write updates to
+  serialize cooperating hostnamed writers and reduce lost updates.
+- Kept unrelated machine-info entries when updating a single key and retained
+  validation in the writer as defence in depth.
+- Tightened product UUID parsing to require canonical 36-character
+  `8-4-4-4-12` UUID syntax and reject all-zero and all-`FF` placeholder
+  values. Unavailable or invalid product UUIDs return a D-Bus error instead
+  of fabricated data.
+
+### D-Bus and polkit
+- Kept hostname-setting operations behind the daemon's D-Bus methods so
+  authorization and persistence follow one path.
+- Scoped the root polkit authorization bypass to hostname1 actions rather than
+  granting unconditional success for unrelated actions.
+- Standardized hostname-operation errors and kept exported property state
+  synchronized on persistence error paths, including errors after an on-disk
+  replacement has taken effect.
+- Marked immutable hostname1 properties with `EmitsChangedSignal=const` in
+  both the shipped interface XML and embedded introspection data.
+- Interactive polkit challenges use
+  `org.freedesktop.DBus.Error.InteractiveAuthorizationRequired` when the
+  caller requests non-interactive authorization but an authentication prompt
+  could satisfy the action.
+- polkit is now a required build dependency. The obsolete `-Dpolkit` build
+  option and related conditional configuration were removed.
+
+### Hostname behavior and hardware identification
+- Static and transient hostname validation follows strict RFC 1123 label
+  rules: labels must be 1–63 characters, cannot be empty, and cannot begin or
+  end with a hyphen.
+- `SetPrettyHostname` preserves free-form dotted names instead of truncating
+  every value at the first dot.
+- Fixed duplicate or spurious `Chassis` and `IconName` property-change
+  notifications by calculating effective values before updating the cache.
+- `IconName` follows the effective chassis, including chassis data from
+  machine-info when no explicit icon is configured.
+- Populated `DefaultHostname` from os-release where available, with
+  `localhost` as the fallback; `HostnameSource` can report the default
+  hostname state.
+- Improved hardware identification fallback order and skip common DMI
+  placeholder strings. Hardware model and vendor can fall back to device-tree
+  data on platforms without usable DMI values.
+- Hardware serial lookup tries DMI product, board, and chassis serial values
+  before falling back to the device-tree serial-number property.
+- Expanded chassis mappings for server, embedded, and desktop form factors;
+  kept the Slackware `hostnamectl` implementation aligned with the daemon.
+
+### Tests and packaging
+- Expanded security-invariant and filesystem/packaging regression checks for
+  machine-info permissions and updates, hostnamectl's D-Bus usage, polkit
+  authorization wiring, UUID validation, hardware fallbacks, and install
+  layout.
+- CI configures and compiles the project, runs registered Meson tests,
+  syntax-checks the test harnesses and `hostnamectl`, validates shipped XML,
+  and checks staged installation and packaging.
+
 ## [0.2.7.1] - 2026-06-27 to 2026-09-01
 
 - Added validation for hostname metadata values and corrected the machine-info
