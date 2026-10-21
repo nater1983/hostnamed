@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Authorization diagnostics and integration testing
+- Clarify the interactive-authorization error so clients know that a polkit
+  authentication agent must be available in the caller's session.
+- Add a target-system integration script that checks wheel authorization and
+  non-wheel denial against the live system D-Bus and polkit setup.
+
 ### D-Bus recovery and configuration monitoring
 - Refresh the PolKit authority when the D-Bus object is restarted, and release
   the cached authority during daemon shutdown.
