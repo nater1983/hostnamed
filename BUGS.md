@@ -12,5 +12,4 @@ https://github.com/nater1983/hostnamed/issues
 - Slackware startup behavior for fully qualified values in /etc/HOSTNAME should
   be verified against the target system's rc.S; hostnamed passes the configured
   static hostname to sethostname().
-- Translation loading by the daemon has not been verified on installed systems;
-  confirm that translations under the configured locale directory are found.
+
