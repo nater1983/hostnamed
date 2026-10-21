@@ -12,11 +12,6 @@ https://github.com/nater1983/hostnamed/issues
 - Interactive authorization depends on a working polkit authentication agent
   in the caller's desktop session. Headless sessions may be unable to complete
   an interactive challenge.
-- Recovery after the system D-Bus daemon restarts has not been fully validated
-  end-to-end; test name loss and re-acquisition with the target service setup.
-- External edits to watched files are detected through inotify. Very rapid
-  successive writes may be coalesced, and behavior under heavy inotify queue
-  load has not been stress-tested.
 - The DMI placeholder list is finite; unknown firmware template strings may
   still be reported. Device-tree HardwareVendor uses the vendor prefix from
   the first compatible entry rather than a marketing name, and some boards do
