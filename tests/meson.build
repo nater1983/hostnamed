@@ -18,3 +18,9 @@ test(
     meson.project_source_root(),
   ],
 )
+
+test(
+  'polkit-integration-script-syntax',
+  find_program('sh'),
+  args : ['-n', files('test-polkit-integration.sh')],
+)
