@@ -385,9 +385,34 @@ rcl_dmi_is_placeholder( const gchar *v )
   t = g_strstrip( g_strdup( v ) );
   if( t[0] == '\0' )
     bad = TRUE;
+
+  /* Exact known placeholders plus common firmware-template patterns. */
   for( i = 0; !bad && junk[i]; i++ )
     if( g_ascii_strcasecmp( t, junk[i] ) == 0 )
       bad = TRUE;
+
+  if( !bad )
+  {
+    gchar *lower = g_ascii_strdown( t, -1 );
+
+    if( strstr( lower, "to be filled" ) ||
+        strstr( lower, "default string" ) ||
+        strstr( lower, "system manufacturer" ) ||
+        strstr( lower, "system product name" ) ||
+        strstr( lower, "not specified" ) ||
+        strstr( lower, "not applicable" ) ||
+        strstr( lower, "unknown" ) ||
+        strstr( lower, "undefined" ) ||
+        strstr( lower, "o.e.m." ) ||
+        strstr( lower, "type1productconfigid" ) ||
+        strstr( lower, "productconfigid" ) ||
+        strstr( lower, "serial number" ) ||
+        g_str_has_prefix( lower, "oem" ) )
+      bad = TRUE;
+
+    g_free( lower );
+  }
+
   g_free( t );
   return bad;
 }
@@ -409,19 +434,6 @@ read_dt_string( const gchar *path )
 {
   gchar *v = read_first_line( path );
   return v ? v : g_strdup( "" );
-}
-
-/* The device-tree "compatible" property is a NUL-separated list of
-   "vendor,model" strings, most specific first.  Return the vendor prefix of
-   the first entry (e.g. "raspberrypi" from "raspberrypi,5-model-b"), or "". */
-static gchar *
-dt_vendor_from_compatible( const gchar *first_entry )
-{
-  const gchar *comma;
-
-  if( !first_entry || !( comma = strchr( first_entry, ',' ) ) || comma == first_entry )
-    return g_strdup( "" );
-  return g_strndup( first_entry, (gsize)( comma - first_entry ) );
 }
 
 /* --------------------------------------------------------------------------
@@ -712,22 +724,23 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
   }
 
   /* ---- DMI hardware info ---- */
-  /* Vendor: DMI system vendor, board vendor, then the device-tree
-     compatible prefix.  Model: DMI product name, board name, then the
-     device-tree model.  Placeholder strings are skipped at each step. */
+  /*
+   * Prefer real DMI vendor names. Device-tree compatible prefixes are
+   * machine identifiers, not reliable marketing names; when DMI has no
+   * usable vendor value, leave HardwareVendor empty rather than report a
+   * misleading identifier. HardwareModel may still use device-tree model.
+   */
   {
     gchar *sys_v   = read_dmi( RCL_DMI_SYS_VENDOR );
     gchar *board_v = read_dmi( RCL_DMI_BOARD_VENDOR );
-    gchar *compat  = read_dt_string( RCL_DT_COMPATIBLE );
-    gchar *dt_v    = dt_vendor_from_compatible( compat );
     gchar *prod    = read_dmi( RCL_DMI_PRODUCT_NAME );
     gchar *board_n = read_dmi( RCL_DMI_BOARD_NAME );
     gchar *dt_m    = read_dt_string( RCL_DT_MODEL );
 
-    UPDATE_STR_PROP( hw_vendor, first_usable_dup( sys_v, board_v, dt_v ), "HardwareVendor" );
-    UPDATE_STR_PROP( hw_model,  first_usable_dup( prod, board_n, dt_m ),  "HardwareModel" );
+    UPDATE_STR_PROP( hw_vendor, first_usable_dup( sys_v, board_v, "" ), "HardwareVendor" );
+    UPDATE_STR_PROP( hw_model,  first_usable_dup( prod, board_n, dt_m ), "HardwareModel" );
 
-    g_free( sys_v ); g_free( board_v ); g_free( compat ); g_free( dt_v );
+    g_free( sys_v ); g_free( board_v );
     g_free( prod );  g_free( board_n ); g_free( dt_m );
   }
   {
