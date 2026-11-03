@@ -5,6 +5,7 @@ import sys
 
 source = Path(sys.argv[1]).read_text(encoding="utf-8")
 hostnamectl = Path(sys.argv[2]).read_text(encoding="utf-8")
+interface_xml = Path(sys.argv[3]).read_text(encoding="utf-8")
 
 
 def require(condition, message):
@@ -83,13 +84,17 @@ require("Machine-info field" in get_handler and "not set" in get_handler,
 # Every Polkit-protected method that may require authentication must
 # expose the same interactive retry contract in introspection and pass the
 # caller's flag through to the asynchronous authorization request.
-for method, signature in (
-    ("GetHardwareSerial", "<arg name=\"interactive\" type=\"b\" direction=\"in\"/>"),
-    ("SetTags", "<arg name=\"interactive\" type=\"b\" direction=\"in\"/>"),
-    ("AddAndRemoveTags", "<arg name=\"interactive\" type=\"b\" direction=\"in\"/>"),
-):
-    require(method in source and signature in source,
+for method in ("GetHardwareSerial", "SetTags", "AddAndRemoveTags"):
+    method_start = source.index(f"<method name='{method}'>")
+    method_end = source.index("</method>", method_start)
+    embedded_method = source[method_start:method_end]
+    require("arg name='interactive' type='b' direction='in'" in embedded_method,
             f"{method} must expose an interactive argument in embedded introspection")
+    xml_start = interface_xml.index(f'<method name="{method}">')
+    xml_end = interface_xml.index("</method>", xml_start)
+    xml_method = interface_xml[xml_start:xml_end]
+    require('name="interactive" type="b" direction="in"' in xml_method,
+            f"{method} must expose an interactive argument in shipped D-Bus XML")
 
 require('check_polkit_async(ctx, RCL_HOSTNAME_POLKIT_GET_HARDWARE_SERIAL, interactive)' in source,
         "GetHardwareSerial must pass its interactive flag to Polkit")
