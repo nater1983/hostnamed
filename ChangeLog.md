@@ -4,6 +4,18 @@ All notable changes to `hostnamed` are documented here, newest release first.
 
 ## [0.4.0] - Unreleased
 
+### Configuration parsing and persistence
+- Replaced the simplistic KEY=value reader with a non-executing parser for
+  quoted and unquoted assignments, comments, and escaped characters.
+- Ignore malformed assignments and retain last-valid-entry-wins behavior for
+  duplicate keys.
+- Escape backslashes and double quotes when serializing machine-info values.
+- Collapse duplicate valid assignments when updating a key while preserving
+  comments, malformed lines, and unrelated settings.
+- Continue rejecting control characters and invalid UTF-8, and retain the
+  existing locked, atomic, root-owned configuration-file replacement path.
+- Added configuration parsing and writer regression checks.
+
 ### D-Bus daemon lifecycle
 - Distinguished intentional D-Bus name takeovers from bus connection loss.
 - Exit cleanly when another live bus client takes ownership instead of
