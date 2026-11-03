@@ -24,7 +24,7 @@ parser = function_body(
 for fragment, message in [
     ("g_ascii_isalnum", "assignment keys must be parsed explicitly"),
     ("*p == '='", "only KEY=value assignments should match"),
-    ("quote == '\\0'", "quoted and unquoted values need distinct parsing"),
+    ("quote != '\\0'", "quoted and unquoted values need distinct parsing"),
     ("if (!closed)", "unterminated quoted values must be rejected"),
     ("goto malformed", "malformed assignments must be ignored"),
     ("*p == '#'", "comments must not become part of values"),
