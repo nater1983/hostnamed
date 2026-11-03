@@ -75,8 +75,10 @@ for fragment, message in [
     require(fragment in meson, message)
 require("install_data(\n  'slack/hostnamectl'" in top_meson,
         "Meson installs must include hostnamectl")
-require('cat slack/hostnamectl > $PKG/usr/bin/hostnamectl' in slackbuild,
-        "SlackBuild must package hostnamectl")
+require("DESTDIR=$PKG $NINJA install" in slackbuild,
+        "SlackBuild must install Meson-managed files into the package root")
+require("cat slack/hostnamectl > $PKG/usr/bin/hostnamectl" not in slackbuild,
+        "SlackBuild must not duplicate Meson's hostnamectl installation")
 require("gdbus call --system" in hostnamectl and "dbus_set SetStaticHostname" in hostnamectl,
         "hostnamectl must use the system D-Bus API")
 require("/etc/machine-info" not in hostnamectl and "MACHINE_INFO_FILE" not in hostnamectl,
