@@ -7,6 +7,7 @@ test(
     files('test-security-invariants.py'),
     join_paths(meson.project_source_root(), 'src', 'rcl-hostname.c'),
     join_paths(meson.project_source_root(), 'slack', 'hostnamectl'),
+    join_paths(meson.project_source_root(), 'data', 'org.freedesktop.hostname1.xml'),
   ],
 )
 
