@@ -301,56 +301,144 @@ read_first_line( const gchar *path )
   return contents;
 }
 
-/* Read a KEY=value file (like /etc/os-release or /etc/machine-info) and
-   return the unquoted value for 'key', or NULL if not found. */
+/*
+ * Parse one KEY=value assignment without evaluating it as shell code.
+ * Both os-release and machine-info use shell-style quoting, but are data
+ * files: variable expansion, command substitution and shell execution are
+ * deliberately not supported here.
+ *
+ * A malformed assignment is ignored. Quoted values support backslash
+ * escapes; unquoted values support escaped characters and cannot contain
+ * unescaped embedded whitespace. A trailing comment is accepted.
+ */
 static gchar *
-read_key_value_file( const gchar *path, const gchar *key )
+parse_key_value_line (const gchar *line, const gchar *key)
 {
-  gchar  *contents = NULL;
-  gchar **lines;
-  gchar  *result   = NULL;
-  gsize   i;
-  gchar  *prefix;
+  const gchar *p = line;
+  GString *value;
+  gchar quote = '\0';
 
-  if( !g_file_get_contents( path, &contents, NULL, NULL ) )
+  while (g_ascii_isspace (*p))
+    p++;
+
+  if (*p == '\0' || *p == '#')
     return NULL;
 
-  prefix = g_strdup_printf( "%s=", key );
-  lines = g_strsplit( contents, "\n", -1 );
+  const gchar *key_start = p;
+  while (g_ascii_isalnum (*p) || *p == '_')
+    p++;
 
-  for( i = 0; lines[i] != NULL; i++ )
+  if ((gsize) (p - key_start) != strlen (key) ||
+      strncmp (key_start, key, strlen (key)) != 0 || *p != '=')
+    return NULL;
+
+  p++;
+  while (*p == ' ' || *p == '\t')
+    p++;
+
+  if (*p == '"' || *p == '\'')
+    quote = *p++;
+
+  value = g_string_new (NULL);
+
+  if (quote != '\0')
   {
-    gchar *line = g_strstrip( lines[i] );
-    gchar *val;
-    gsize  len;
+    gboolean closed = FALSE;
 
-    if( !g_str_has_prefix( line, prefix ) )
-      continue;
-
-    val = g_strdup( line + strlen( prefix ) );
-    g_strstrip( val );
-    len = strlen( val );
-
-    /* machine-info values may be enclosed in double quotes. */
-    if( len >= 2 && val[0] == '"' && val[len - 1] == '"' )
+    while (*p)
     {
-      gchar *unquoted = g_strndup( val + 1, len - 2 );
-      g_free( val );
-      val = unquoted;
+      if (*p == quote)
+      {
+        p++;
+        closed = TRUE;
+        break;
+      }
+
+      if (*p == '\\' && quote == '"' && p[1] != '\0')
+        p++;
+
+      g_string_append_c (value, *p++);
     }
 
-    /*
-     * Keep scanning instead of stopping at the first match. If a key is
-     * duplicated, the last occurrence wins, which allows later entries to
-     * override earlier ones.
-     */
-    g_free( result );
-    result = val;
+    if (!closed)
+      goto malformed;
+
+    while (*p == ' ' || *p == '\t' || *p == '\r')
+      p++;
+
+    if (*p != '\0' && *p != '#')
+      goto malformed;
+  }
+  else
+  {
+    gboolean trailing_space = FALSE;
+
+    while (*p)
+    {
+      if (*p == '\\')
+      {
+        if (p[1] == '\0')
+          goto malformed;
+        if (trailing_space)
+          goto malformed;
+        p++;
+        g_string_append_c (value, *p++);
+        continue;
+      }
+
+      if (g_ascii_isspace (*p))
+      {
+        trailing_space = TRUE;
+        p++;
+        continue;
+      }
+
+      if (trailing_space)
+      {
+        if (*p == '#')
+          break;
+        goto malformed;
+      }
+
+      g_string_append_c (value, *p++);
+    }
   }
 
-  g_free( prefix );
-  g_strfreev( lines );
-  g_free( contents );
+  return g_string_free (value, FALSE);
+
+malformed:
+  g_string_free (value, TRUE);
+  return NULL;
+}
+
+/* Read a KEY=value file (e.g. /etc/os-release or /etc/machine-info).
+ * Never source or execute it. The last valid occurrence of a duplicate key
+ * wins, matching the existing hostnamed behavior. */
+static gchar *
+read_key_value_file (const gchar *path, const gchar *key)
+{
+  gchar *contents = NULL;
+  gchar **lines;
+  gchar *result = NULL;
+
+  if (!g_file_get_contents (path, &contents, NULL, NULL))
+    return NULL;
+
+  lines = g_strsplit (contents, "\\n", -1);
+
+  for (gsize i = 0; lines[i] != NULL; i++)
+  {
+    gchar *value = parse_key_value_line (lines[i], key);
+
+    if (value != NULL)
+    {
+      g_free (result);
+      result = value;
+    }
+  }
+
+  g_strfreev (lines);
+  g_free (contents);
   return result;
 }
 
