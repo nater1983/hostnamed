@@ -44,3 +44,21 @@ test(
     join_paths(meson.project_source_root(), 'src', 'rcl-hostname.c'),
   ],
 )
+
+test(
+  'daemon-lifecycle-invariants',
+  python,
+  args : [
+    files('test-daemon-lifecycle.py'),
+    join_paths(meson.project_source_root(), 'src', 'main.c'),
+  ],
+)
+
+test(
+  'configuration-parsing-invariants',
+  python,
+  args : [
+    files('test-config-parsing.py'),
+    join_paths(meson.project_source_root(), 'src', 'rcl-hostname.c'),
+  ],
+)

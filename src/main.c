@@ -193,19 +193,19 @@ rcl_main_name_acquired(GDBusConnection *connection,
 /*
  * rcl_main_name_lost:
  *
- * Fired in two distinct situations:
+ * A name loss before the first successful acquisition is a startup
+ * conflict and is fatal. After acquisition, distinguish an intentional
+ * ownership takeover from a lost bus connection:
  *
- *   1. Startup failure – the name could not be obtained at all (e.g. another
- *      instance is running and --replace was not given).  has_name is FALSE.
- *      We exit cleanly rather than looping forever.
+ *   - A still-open connection means another client replaced our name owner.
+ *     Exit instead of repeatedly competing with the new owner.
+ *   - A NULL or closed connection means the bus connection itself was lost.
+ *     Tear down the old D-Bus registration and retry after the bus has had
+ *     time to restart.
  *
- *   2. Runtime loss – we held the name and lost it (dbus-daemon restart, a
- *      --replace takeover, etc.).  has_name is TRUE.  We schedule a reconnect
- *      after RECONNECT_DELAY_MS so transient dbus-daemon restarts are
- *      survived without the service going permanently dark.
- *
- * In both cases, if --replace was active and we already owned the name once,
- * losing it a second time means another instance forcibly took over; exit.
+ * This distinction is independent of --replace: that option controls the
+ * initial ownership request, not whether a transient bus restart is
+ * recoverable.
  */
 static void
 rcl_main_name_lost(GDBusConnection *connection,
@@ -217,17 +217,16 @@ rcl_main_name_lost(GDBusConnection *connection,
   g_warning("D-Bus name lost: %s", name);
 
   /*
-   * The old bus connection may have been disconnected or replaced. Tear
-   * down its registered object before scheduling a reconnect so startup on
-   * the next connection cannot leak the old connection or retain a stale
-   * registration ID.
+   * Always remove the old object registration before reconnecting. This
+   * clears the stale connection and registration ID so startup on a new
+   * connection can register the object cleanly.
    */
   rcl_daemon_shutdown(state->daemon);
 
   if (state->exiting)
     return;
 
-  /* Case 1: never acquired – another instance is running */
+  /* A failed initial ownership request is not a transient reconnect case. */
   if (!state->has_name)
   {
     g_warning("could not acquire %s – is another instance running?", name);
@@ -235,18 +234,22 @@ rcl_main_name_lost(GDBusConnection *connection,
     return;
   }
 
-  /* Case 2: forcibly replaced by another --replace instance */
-  if (state->replace)
+  /*
+   * If the connection is still alive, the bus is healthy and another owner
+   * deliberately took the name. Do not fight that owner with a reconnect
+   * loop. A closed (or unavailable) connection indicates bus loss instead.
+   */
+  if (connection != NULL && !g_dbus_connection_is_closed(connection))
   {
-    LOG(state, "replaced by another instance, exiting");
+    LOG(state, "D-Bus name %s was taken by another owner; exiting", name);
     g_main_loop_quit(state->loop);
     return;
   }
 
-  /* Case 3: transient loss (dbus-daemon restart etc.) – schedule reconnect */
   if (!state->reconnect_id)
   {
-    g_warning("scheduling reconnect in %d ms", RECONNECT_DELAY_MS);
+    g_warning("D-Bus connection lost; scheduling reconnect in %d ms",
+              RECONNECT_DELAY_MS);
     state->reconnect_id = g_timeout_add(RECONNECT_DELAY_MS,
                                         rcl_main_reconnect_cb,
                                         state);
@@ -572,7 +575,7 @@ gint main(gint argc, gchar **argv)
   /* Acquire the D-Bus name for the first time */
   rcl_acquire_name(state);
 
-  g_debug("hostnamed started (%s)", PACKAGE_VERSION);
+  g_info("hostnamed started (%s)", PACKAGE_VERSION);
 
   g_main_loop_run(state->loop);
 

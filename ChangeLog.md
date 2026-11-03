@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased]
+
+### Maintenance fixes
+- Distinguish an intentional D-Bus name takeover from an actual bus
+  disconnection, and reconnect cleanly after the system bus restarts.
+- Parse `/etc/machine-info` and `/etc/os-release` as KEY=value data without
+  evaluating shell syntax; reject malformed assignments and handle quoted
+  escapes correctly.
+- Preserve comments and unrelated machine-info entries when updating values,
+  serialize quotes and backslashes safely, and retain atomic mode-0644 writes.
+- Log daemon startup and D-Bus object registration at informational priority
+  so these lifecycle messages reach normal syslog output.
+
+### Regression tests and packaging
+- Add regression checks for D-Bus ownership/reconnection and configuration
+  parsing/writing invariants.
+- Run the Meson test suite as part of the SlackBuild before installation.
+
 All notable changes to `hostnamed` are documented here, newest release first.
 
 ## [0.3.1] - 2026-10-21

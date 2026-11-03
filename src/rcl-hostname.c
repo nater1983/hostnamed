@@ -117,14 +117,17 @@ static const gchar hostname1_introspection_xml[] =
   "      <arg name='uuid'        type='ay' direction='out'/>"
   "    </method>"
   "    <method name='GetHardwareSerial'>"
+  "      <arg name='interactive' type='b' direction='in'/>"
   "      <arg name='serial'      type='s' direction='out'/>"
   "    </method>"
   "    <method name='SetTags'>"
   "      <arg name='tags' type='as' direction='in'/>"
+  "      <arg name='interactive' type='b' direction='in'/>"
   "    </method>"
   "    <method name='AddAndRemoveTags'>"
   "      <arg name='add' type='as' direction='in'/>"
   "      <arg name='remove' type='as' direction='in'/>"
+  "      <arg name='interactive' type='b' direction='in'/>"
   "    </method>"
   "    <method name='GetMachineInfo'>"
   "      <arg name='field' type='s' direction='in'/>"
@@ -298,56 +301,141 @@ read_first_line( const gchar *path )
   return contents;
 }
 
-/* Read a KEY=value file (like /etc/os-release or /etc/machine-info) and
-   return the unquoted value for 'key', or NULL if not found. */
+/*
+ * Parse one KEY=value assignment without evaluating it as shell code.
+ * os-release and machine-info are data files: variable expansion,
+ * command substitution and shell execution are deliberately unsupported.
+ * Malformed assignments are ignored.
+ */
 static gchar *
-read_key_value_file( const gchar *path, const gchar *key )
+parse_key_value_line (const gchar *line, const gchar *key)
 {
-  gchar  *contents = NULL;
-  gchar **lines;
-  gchar  *result   = NULL;
-  gsize   i;
-  gchar  *prefix;
+  const gchar *p = line;
+  GString *value;
+  gchar quote = '\0';
 
-  if( !g_file_get_contents( path, &contents, NULL, NULL ) )
+  while (g_ascii_isspace (*p))
+    p++;
+
+  if (*p == '\0' || *p == '#')
     return NULL;
 
-  prefix = g_strdup_printf( "%s=", key );
-  lines = g_strsplit( contents, "\n", -1 );
+  const gchar *key_start = p;
+  while (g_ascii_isalnum (*p) || *p == '_')
+    p++;
 
-  for( i = 0; lines[i] != NULL; i++ )
+  if ((gsize) (p - key_start) != strlen (key) ||
+      strncmp (key_start, key, strlen (key)) != 0 || *p != '=')
+    return NULL;
+
+  p++;
+  while (*p == ' ' || *p == '\t')
+    p++;
+
+  if (*p == '"' || *p == '\'')
+    quote = *p++;
+
+  value = g_string_new (NULL);
+
+  if (quote != '\0')
   {
-    gchar *line = g_strstrip( lines[i] );
-    gchar *val;
-    gsize  len;
+    gboolean closed = FALSE;
 
-    if( !g_str_has_prefix( line, prefix ) )
-      continue;
-
-    val = g_strdup( line + strlen( prefix ) );
-    g_strstrip( val );
-    len = strlen( val );
-
-    /* machine-info values may be enclosed in double quotes. */
-    if( len >= 2 && val[0] == '"' && val[len - 1] == '"' )
+    while (*p)
     {
-      gchar *unquoted = g_strndup( val + 1, len - 2 );
-      g_free( val );
-      val = unquoted;
+      if (*p == quote)
+      {
+        p++;
+        closed = TRUE;
+        break;
+      }
+
+      /* os-release only defines these four double-quoted escapes.
+       * Preserve a backslash before any other character literally. */
+      if (*p == '\\' && quote == '"' && p[1] != '\0' &&
+          (p[1] == '"' || p[1] == '\\' || p[1] == '$' || p[1] == 0x60))
+        p++;
+
+      g_string_append_c (value, *p++);
     }
 
-    /*
-     * Keep scanning instead of stopping at the first match. If a key is
-     * duplicated, the last occurrence wins, which allows later entries to
-     * override earlier ones.
-     */
-    g_free( result );
-    result = val;
+    if (!closed)
+      goto malformed;
+
+    while (*p == ' ' || *p == '\t' || *p == '\r')
+      p++;
+
+    if (*p != '\0' && *p != '#')
+      goto malformed;
+  }
+  else
+  {
+    gboolean trailing_space = FALSE;
+
+    while (*p)
+    {
+      if (*p == '\\')
+      {
+        if (p[1] == '\0' || trailing_space)
+          goto malformed;
+        p++;
+        g_string_append_c (value, *p++);
+        continue;
+      }
+
+      if (g_ascii_isspace (*p))
+      {
+        trailing_space = TRUE;
+        p++;
+        continue;
+      }
+
+      if (trailing_space)
+      {
+        if (*p == '#')
+          break;
+        goto malformed;
+      }
+
+      g_string_append_c (value, *p++);
+    }
   }
 
-  g_free( prefix );
-  g_strfreev( lines );
-  g_free( contents );
+  return g_string_free (value, FALSE);
+
+malformed:
+  g_string_free (value, TRUE);
+  return NULL;
+}
+
+/* Read a KEY=value file (e.g. /etc/os-release or /etc/machine-info).
+ * Never source or execute it. The last valid occurrence of a duplicate key
+ * wins, matching hostnamed's established behavior. */
+static gchar *
+read_key_value_file (const gchar *path, const gchar *key)
+{
+  gchar *contents = NULL;
+  gchar **lines;
+  gchar *result = NULL;
+
+  if (!g_file_get_contents (path, &contents, NULL, NULL))
+    return NULL;
+
+  lines = g_strsplit (contents, "\n", -1);
+
+  for (gsize i = 0; lines[i] != NULL; i++)
+  {
+    gchar *value = parse_key_value_line (lines[i], key);
+
+    if (value != NULL)
+    {
+      g_free (result);
+      result = value;
+    }
+  }
+
+  g_strfreev (lines);
+  g_free (contents);
   return result;
 }
 
@@ -958,7 +1046,8 @@ atomic_replace_file (const gchar *path, const gchar *contents, gsize length,
 /* Forward declaration: the value validator is defined further down, but the
    writer below calls it as a defence-in-depth measure so a future second
    caller cannot reintroduce machine-info injection by forgetting to validate. */
-static gboolean rcl_machine_info_value_is_safe( const gchar *value );
+static gboolean rcl_machine_info_value_is_safe (const gchar *value);
+static gchar *rcl_machine_info_quote_value (const gchar *value);
 
 /* Serialize daemon writers and reject a symlink or untrusted lock file. */
 static int
@@ -1004,7 +1093,6 @@ write_machine_info_key (const gchar *key, const gchar *value, GError **error)
   gchar **lines;
   GString *out;
   gboolean found = FALSE;
-  gchar *prefix;
   GError *read_error = NULL;
   int lock_fd;
 
@@ -1033,24 +1121,29 @@ write_machine_info_key (const gchar *key, const gchar *value, GError **error)
   lines = contents ? g_strsplit (contents, "\n", -1) : g_new0 (gchar *, 1);
   g_free (contents);
   out = g_string_new (NULL);
-  prefix = g_strdup_printf ("%s=", key);
+  gchar *quoted_value = (value && value[0] != '\0')
+                      ? rcl_machine_info_quote_value (value) : NULL;
 
   for (gsize i = 0; lines[i] != NULL; i++) {
-    if (g_str_has_prefix (lines[i], prefix)) {
-      if (!found && value && value[0] != '\0')
-        g_string_append_printf (out, "%s=\"%s\"\n", key, value);
+    gchar *existing_value = parse_key_value_line (lines[i], key);
+
+    if (existing_value != NULL) {
+      /* Collapse duplicate valid assignments into one canonical entry. */
+      if (!found && quoted_value)
+        g_string_append_printf (out, "%s=%s\n", key, quoted_value);
       found = TRUE;
+      g_free (existing_value);
     } else if (lines[i][0] != '\0') {
-      /* Preserve comments, unknown keys, and all unrelated entries. */
+      /* Preserve comments, malformed lines, and unrelated entries. */
       g_string_append_printf (out, "%s\n", lines[i]);
     }
   }
 
-  if (!found && value && value[0] != '\0')
-    g_string_append_printf (out, "%s=\"%s\"\n", key, value);
+  if (!found && quoted_value)
+    g_string_append_printf (out, "%s=%s\n", key, quoted_value);
 
+  g_free (quoted_value);
   g_strfreev (lines);
-  g_free (prefix);
 
   gboolean ok = atomic_replace_file_mode (RCL_MACHINE_INFO_FILE, out->str,
                                           out->len, 0644, error);
@@ -1133,22 +1226,35 @@ rcl_derive_pretty_hostname( const gchar *name )
 }
 
 static gboolean
-rcl_machine_info_value_is_safe( const gchar *value )
+rcl_machine_info_value_is_safe (const gchar *value)
 {
-  const gchar *p;
+  const guchar *p;
 
-  if( !value )
+  if (value == NULL)
     return FALSE;
 
-  for( p = value; *p; p++ )
+  for (p = (const guchar *) value; *p; p++)
+    if (*p < 0x20 || *p == 0x7f)
+      return FALSE;
+
+  return g_utf8_validate (value, -1, NULL);
+}
+
+/* Serialize a value as a machine-info double-quoted string. */
+static gchar *
+rcl_machine_info_quote_value (const gchar *value)
+{
+  GString *quoted = g_string_new ("\"");
+
+  for (const gchar *p = value; *p; p++)
   {
-    guchar c = (guchar) *p;
-    if( c < 0x20 || c == 0x7f )
-      return FALSE;
-    if( c == '"' || c == '\\' )
-      return FALSE;
+    if (*p == '\\' || *p == '"')
+      g_string_append_c (quoted, '\\');
+    g_string_append_c (quoted, *p);
   }
-  return TRUE;
+
+  g_string_append_c (quoted, '"');
+  return g_string_free (quoted, FALSE);
 }
 
 /* --------------------------------------------------------------------------
@@ -1413,7 +1519,7 @@ do_set_machine_info( RclHostnameDaemon *daemon, const gchar *key,
   {
     g_dbus_method_invocation_return_dbus_error( invocation,
       "org.freedesktop.DBus.Error.InvalidArgs",
-      "Invalid machine-info value: control characters and quotes are not allowed" );
+      "Invalid machine-info value: control characters are not allowed" );
     g_free( sanitised );
     return;
   }
@@ -1554,8 +1660,11 @@ static void do_set_tags(RclHostnameDaemon *daemon, GVariant *parameters,
   gchar *existing=NULL, *joined=NULL;
   GError *error=NULL;
 
-  if(add_remove) g_variant_get(parameters,"(@as@as)",&addv,&removev);
-  else g_variant_get(parameters,"(@as)",&addv);
+  gboolean interactive;
+
+  if(add_remove) g_variant_get(parameters,"(@as@asb)",&addv,&removev,&interactive);
+  else g_variant_get(parameters,"(@asb)",&addv,&interactive);
+  (void) interactive;
 
   if(add_remove) {
     existing=read_key_value_file(RCL_MACHINE_INFO_FILE,"TAGS");
@@ -1869,11 +1978,15 @@ handle_method_call( GDBusConnection       *connection,
   /* ---- sensitive hardware reads ---- */
   if( g_strcmp0(method_name, "GetHardwareSerial") == 0 )
   {
+    gboolean interactive;
+
+    g_variant_get(parameters, "(b)", &interactive);
+
     ctx = g_new0(AuthCtx, 1);
     ctx->daemon = g_object_ref(daemon);
     ctx->invocation = g_object_ref (invocation);
     ctx->op = OP_GET_HARDWARE_SERIAL;
-    check_polkit_async(ctx, RCL_HOSTNAME_POLKIT_GET_HARDWARE_SERIAL, FALSE);
+    check_polkit_async(ctx, RCL_HOSTNAME_POLKIT_GET_HARDWARE_SERIAL, interactive);
     return;
   }
   if( g_strcmp0(method_name, "GetProductUUID") == 0 )
@@ -1894,10 +2007,15 @@ handle_method_call( GDBusConnection       *connection,
   }
 
   if( g_strcmp0(method_name, "SetTags") == 0 || g_strcmp0(method_name, "AddAndRemoveTags") == 0 ) {
+    gboolean interactive;
+
+    g_variant_get_child(parameters, g_variant_n_children(parameters) - 1,
+                        "b", &interactive);
+
     ctx=g_new0(AuthCtx,1); ctx->daemon=g_object_ref(daemon); ctx->invocation=g_object_ref(invocation);
     ctx->op = g_strcmp0(method_name,"SetTags")==0 ? OP_SET_TAGS : OP_ADD_REMOVE_TAGS;
     ctx->parameters=g_variant_ref(parameters);
-    check_polkit_async(ctx,RCL_HOSTNAME_POLKIT_SET_MACHINE_INFO,FALSE); return;
+    check_polkit_async(ctx,RCL_HOSTNAME_POLKIT_SET_MACHINE_INFO,interactive); return;
   }
   if( g_strcmp0(method_name, "GetMachineInfo") == 0 ) {
     const gchar *field; gchar *value; g_variant_get(parameters,"(&s)",&field);
@@ -2048,7 +2166,7 @@ rcl_daemon_startup( RclDaemon *daemon, GDBusConnection *connection )
     }
   }
 
-  g_debug( "hostnamed D-Bus object registered at /org/freedesktop/hostname1" );
+  g_info( "hostnamed D-Bus object registered at /org/freedesktop/hostname1" );
   return TRUE;
 }
 
