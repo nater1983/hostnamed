@@ -1095,7 +1095,6 @@ write_machine_info_key (const gchar *key, const gchar *value, GError **error)
   gchar **lines;
   GString *out;
   gboolean found = FALSE;
-  gchar *prefix;
   GError *read_error = NULL;
   int lock_fd;
 
@@ -1124,24 +1123,29 @@ write_machine_info_key (const gchar *key, const gchar *value, GError **error)
   lines = contents ? g_strsplit (contents, "\n", -1) : g_new0 (gchar *, 1);
   g_free (contents);
   out = g_string_new (NULL);
-  prefix = g_strdup_printf ("%s=", key);
+  gchar *quoted_value = (value && value[0] != '\0')
+                      ? rcl_machine_info_quote_value (value) : NULL;
 
   for (gsize i = 0; lines[i] != NULL; i++) {
-    if (g_str_has_prefix (lines[i], prefix)) {
-      if (!found && value && value[0] != '\0')
-        g_string_append_printf (out, "%s=\"%s\"\n", key, value);
+    gchar *existing_value = parse_key_value_line (lines[i], key);
+
+    if (existing_value != NULL) {
+      /* Collapse duplicate valid assignments into one canonical entry. */
+      if (!found && quoted_value)
+        g_string_append_printf (out, "%s=%s\\n", key, quoted_value);
       found = TRUE;
+      g_free (existing_value);
     } else if (lines[i][0] != '\0') {
-      /* Preserve comments, unknown keys, and all unrelated entries. */
-      g_string_append_printf (out, "%s\n", lines[i]);
+      /* Preserve comments, malformed lines, and unrelated entries. */
+      g_string_append_printf (out, "%s\\n", lines[i]);
     }
   }
 
-  if (!found && value && value[0] != '\0')
-    g_string_append_printf (out, "%s=\"%s\"\n", key, value);
+  if (!found && quoted_value)
+    g_string_append_printf (out, "%s=%s\\n", key, quoted_value);
 
+  g_free (quoted_value);
   g_strfreev (lines);
-  g_free (prefix);
 
   gboolean ok = atomic_replace_file_mode (RCL_MACHINE_INFO_FILE, out->str,
                                           out->len, 0644, error);
@@ -1224,22 +1228,35 @@ rcl_derive_pretty_hostname( const gchar *name )
 }
 
 static gboolean
-rcl_machine_info_value_is_safe( const gchar *value )
+rcl_machine_info_value_is_safe (const gchar *value)
 {
-  const gchar *p;
+  const guchar *p;
 
-  if( !value )
+  if (value == NULL)
     return FALSE;
 
-  for( p = value; *p; p++ )
+  for (p = (const guchar *) value; *p; p++)
+    if (*p < 0x20 || *p == 0x7f)
+      return FALSE;
+
+  return g_utf8_validate (value, -1, NULL);
+}
+
+/* Serialize a value as a machine-info double-quoted string. */
+static gchar *
+rcl_machine_info_quote_value (const gchar *value)
+{
+  GString *quoted = g_string_new ("\\"");
+
+  for (const gchar *p = value; *p; p++)
   {
-    guchar c = (guchar) *p;
-    if( c < 0x20 || c == 0x7f )
-      return FALSE;
-    if( c == '"' || c == '\\' )
-      return FALSE;
+    if (*p == '\\' || *p == '"')
+      g_string_append_c (quoted, '\\');
+    g_string_append_c (quoted, *p);
   }
-  return TRUE;
+
+  g_string_append_c (quoted, '"');
+  return g_string_free (quoted, FALSE);
 }
 
 /* --------------------------------------------------------------------------
