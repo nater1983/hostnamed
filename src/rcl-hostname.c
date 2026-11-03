@@ -2166,7 +2166,7 @@ rcl_daemon_startup( RclDaemon *daemon, GDBusConnection *connection )
     }
   }
 
-  g_debug( "hostnamed D-Bus object registered at /org/freedesktop/hostname1" );
+  g_info( "hostnamed D-Bus object registered at /org/freedesktop/hostname1" );
   return TRUE;
 }
 
