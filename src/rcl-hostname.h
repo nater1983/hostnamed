@@ -89,6 +89,8 @@ void       rcl_daemon_set_debug  ( RclDaemon *daemon, gboolean debug );
     SetChassis        (s name, b interactive)  – writes CHASSIS to /etc/machine-info
     SetDeployment     (s name, b interactive)  – writes DEPLOYMENT to /etc/machine-info
     SetLocation       (s name, b interactive)  – writes LOCATION to /etc/machine-info
+    SetTags           (as tags, b interactive)   – replaces machine tags
+    AddAndRemoveTags  (as add, as remove, b interactive) – updates machine tags
     GetProductUUID    (b interactive) → ay      – returns DMI product UUID as byte array
     GetHardwareSerial (b interactive) → s       – returns the first usable DMI serial (product, board, chassis)
     Describe          ()             → s        – returns JSON blob of all properties
