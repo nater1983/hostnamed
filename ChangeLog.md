@@ -2,6 +2,20 @@
 
 All notable changes to `hostnamed` are documented here, newest release first.
 
+## [0.4.0] - Unreleased
+
+### PolKit authorization
+- Added the standard interactive-authorization argument to
+  `GetHardwareSerial`, `SetTags`, and `AddAndRemoveTags`.
+- Passed each caller's interactive flag through the asynchronous PolKit
+  authorization flow, allowing clients to request an authentication-agent
+  prompt instead of being limited to non-interactive authorization.
+- Kept hardware-serial reads and machine-tag updates behind their existing
+  dedicated PolKit actions.
+- Added regression checks for the embedded and shipped D-Bus method
+  signatures and interactive authorization wiring.
+
+
 ## [0.3.1] - 2026-10-21
 
 ### Release and documentation
