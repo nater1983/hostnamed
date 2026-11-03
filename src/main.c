@@ -575,7 +575,7 @@ gint main(gint argc, gchar **argv)
   /* Acquire the D-Bus name for the first time */
   rcl_acquire_name(state);
 
-  g_debug("hostnamed started (%s)", PACKAGE_VERSION);
+  g_info("hostnamed started (%s)", PACKAGE_VERSION);
 
   g_main_loop_run(state->loop);
 
