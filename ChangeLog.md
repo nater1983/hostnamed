@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased]
+All notable changes to `hostnamed` are documented here, newest release first.
+
+## [0.3.2] - 2026-11-02
 
 ### Maintenance fixes
 - Distinguish an intentional D-Bus name takeover from an actual bus
@@ -17,8 +19,6 @@
 - Add regression checks for D-Bus ownership/reconnection and configuration
   parsing/writing invariants.
 - Run the Meson test suite as part of the SlackBuild before installation.
-
-All notable changes to `hostnamed` are documented here, newest release first.
 
 ## [0.3.1] - 2026-10-21
 
@@ -282,3 +282,4 @@ does not establish those boundaries.
   metadata, and build configuration during initial development.
 - Changed `FirmwareDate` to the D-Bus uint64 representation.
 - Tightened the D-Bus security policy and simplified the polkit rules.
+
