@@ -80,4 +80,27 @@ require('g_regex_match_simple("^[A-Z][A-Z0-9_]*$"' in get_handler,
 require("Machine-info field" in get_handler and "not set" in get_handler,
         "missing machine-info fields must be reported")
 
+# Every Polkit-protected method that may require authentication must
+# expose the same interactive retry contract in introspection and pass the
+# caller's flag through to the asynchronous authorization request.
+for method, signature in (
+    ("GetHardwareSerial", "<arg name=\"interactive\" type=\"b\" direction=\"in\"/>"),
+    ("SetTags", "<arg name=\"interactive\" type=\"b\" direction=\"in\"/>"),
+    ("AddAndRemoveTags", "<arg name=\"interactive\" type=\"b\" direction=\"in\"/>"),
+):
+    require(method in source and signature in source,
+            f"{method} must expose an interactive argument in embedded introspection")
+
+require('check_polkit_async(ctx, RCL_HOSTNAME_POLKIT_GET_HARDWARE_SERIAL, interactive)' in source,
+        "GetHardwareSerial must pass its interactive flag to Polkit")
+require('check_polkit_async(ctx,RCL_HOSTNAME_POLKIT_SET_MACHINE_INFO,interactive)' in source,
+        "tag updates must pass their interactive flag to Polkit")
+require('g_variant_get(parameters, "(b)", &interactive)' in source,
+        "GetHardwareSerial must parse its interactive argument")
+require('g_variant_get_child(parameters, g_variant_n_children(parameters) - 1,' in source,
+        "tag methods must parse their trailing interactive argument")
+require('g_variant_get(parameters,"(@asb)",&addv,&interactive)' in source and
+        'g_variant_get(parameters,"(@as@asb)",&addv,&removev,&interactive)' in source,
+        "tag update handlers must parse the revised D-Bus argument signatures")
+
 print("security source invariants: PASS")
