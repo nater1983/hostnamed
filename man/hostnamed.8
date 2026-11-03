@@ -276,14 +276,14 @@ Returns the first usable serial number from the DMI product, board, or chassis
 serial fields. Placeholder values are skipped. On systems without a usable
 DMI serial, the device-tree serial-number property is used when available.
 .TP
-.B SetTags(as tags)
+.B SetTags(as tags, b interactive)
 Replaces the machine's tag list with
 .IR tags .
 Requires the
 .B org.freedesktop.hostname1.set-machine-info
 PolKit action.
 .TP
-.B AddAndRemoveTags(as add, as remove)
+.B AddAndRemoveTags(as add, as remove, b interactive)
 Adds the tags in
 .I add
 and removes the tags in
