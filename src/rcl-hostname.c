@@ -117,14 +117,17 @@ static const gchar hostname1_introspection_xml[] =
   "      <arg name='uuid'        type='ay' direction='out'/>"
   "    </method>"
   "    <method name='GetHardwareSerial'>"
+  "      <arg name='interactive' type='b' direction='in'/>"
   "      <arg name='serial'      type='s' direction='out'/>"
   "    </method>"
   "    <method name='SetTags'>"
   "      <arg name='tags' type='as' direction='in'/>"
+  "      <arg name='interactive' type='b' direction='in'/>"
   "    </method>"
   "    <method name='AddAndRemoveTags'>"
   "      <arg name='add' type='as' direction='in'/>"
   "      <arg name='remove' type='as' direction='in'/>"
+  "      <arg name='interactive' type='b' direction='in'/>"
   "    </method>"
   "    <method name='GetMachineInfo'>"
   "      <arg name='field' type='s' direction='in'/>"
@@ -1554,8 +1557,11 @@ static void do_set_tags(RclHostnameDaemon *daemon, GVariant *parameters,
   gchar *existing=NULL, *joined=NULL;
   GError *error=NULL;
 
-  if(add_remove) g_variant_get(parameters,"(@as@as)",&addv,&removev);
-  else g_variant_get(parameters,"(@as)",&addv);
+  gboolean interactive;
+
+  if(add_remove) g_variant_get(parameters,"(@as@asb)",&addv,&removev,&interactive);
+  else g_variant_get(parameters,"(@asb)",&addv,&interactive);
+  (void) interactive;
 
   if(add_remove) {
     existing=read_key_value_file(RCL_MACHINE_INFO_FILE,"TAGS");
@@ -1869,11 +1875,15 @@ handle_method_call( GDBusConnection       *connection,
   /* ---- sensitive hardware reads ---- */
   if( g_strcmp0(method_name, "GetHardwareSerial") == 0 )
   {
+    gboolean interactive;
+
+    g_variant_get(parameters, "(b)", &interactive);
+
     ctx = g_new0(AuthCtx, 1);
     ctx->daemon = g_object_ref(daemon);
     ctx->invocation = g_object_ref (invocation);
     ctx->op = OP_GET_HARDWARE_SERIAL;
-    check_polkit_async(ctx, RCL_HOSTNAME_POLKIT_GET_HARDWARE_SERIAL, FALSE);
+    check_polkit_async(ctx, RCL_HOSTNAME_POLKIT_GET_HARDWARE_SERIAL, interactive);
     return;
   }
   if( g_strcmp0(method_name, "GetProductUUID") == 0 )
@@ -1894,10 +1904,15 @@ handle_method_call( GDBusConnection       *connection,
   }
 
   if( g_strcmp0(method_name, "SetTags") == 0 || g_strcmp0(method_name, "AddAndRemoveTags") == 0 ) {
+    gboolean interactive;
+
+    g_variant_get_child(parameters, g_variant_n_children(parameters) - 1,
+                        "b", &interactive);
+
     ctx=g_new0(AuthCtx,1); ctx->daemon=g_object_ref(daemon); ctx->invocation=g_object_ref(invocation);
     ctx->op = g_strcmp0(method_name,"SetTags")==0 ? OP_SET_TAGS : OP_ADD_REMOVE_TAGS;
     ctx->parameters=g_variant_ref(parameters);
-    check_polkit_async(ctx,RCL_HOSTNAME_POLKIT_SET_MACHINE_INFO,FALSE); return;
+    check_polkit_async(ctx,RCL_HOSTNAME_POLKIT_SET_MACHINE_INFO,interactive); return;
   }
   if( g_strcmp0(method_name, "GetMachineInfo") == 0 ) {
     const gchar *field; gchar *value; g_variant_get(parameters,"(&s)",&field);
