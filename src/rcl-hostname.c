@@ -1047,7 +1047,8 @@ atomic_replace_file (const gchar *path, const gchar *contents, gsize length,
 /* Forward declaration: the value validator is defined further down, but the
    writer below calls it as a defence-in-depth measure so a future second
    caller cannot reintroduce machine-info injection by forgetting to validate. */
-static gboolean rcl_machine_info_value_is_safe( const gchar *value );
+static gboolean rcl_machine_info_value_is_safe (const gchar *value);
+static gchar *rcl_machine_info_quote_value (const gchar *value);
 
 /* Serialize daemon writers and reject a symlink or untrusted lock file. */
 static int
