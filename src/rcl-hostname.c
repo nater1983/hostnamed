@@ -1244,7 +1244,7 @@ rcl_machine_info_value_is_safe (const gchar *value)
 static gchar *
 rcl_machine_info_quote_value (const gchar *value)
 {
-  GString *quoted = g_string_new ("\\"");
+  GString *quoted = g_string_new ("\"");
 
   for (const gchar *p = value; *p; p++)
   {
