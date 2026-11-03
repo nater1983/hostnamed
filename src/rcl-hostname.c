@@ -424,7 +424,7 @@ read_key_value_file (const gchar *path, const gchar *key)
   if (!g_file_get_contents (path, &contents, NULL, NULL))
     return NULL;
 
-  lines = g_strsplit (contents, "\\n", -1);
+  lines = g_strsplit (contents, "\n", -1);
 
   for (gsize i = 0; lines[i] != NULL; i++)
   {
@@ -1132,17 +1132,17 @@ write_machine_info_key (const gchar *key, const gchar *value, GError **error)
     if (existing_value != NULL) {
       /* Collapse duplicate valid assignments into one canonical entry. */
       if (!found && quoted_value)
-        g_string_append_printf (out, "%s=%s\\n", key, quoted_value);
+        g_string_append_printf (out, "%s=%s\n", key, quoted_value);
       found = TRUE;
       g_free (existing_value);
     } else if (lines[i][0] != '\0') {
       /* Preserve comments, malformed lines, and unrelated entries. */
-      g_string_append_printf (out, "%s\\n", lines[i]);
+      g_string_append_printf (out, "%s\n", lines[i]);
     }
   }
 
   if (!found && quoted_value)
-    g_string_append_printf (out, "%s=%s\\n", key, quoted_value);
+    g_string_append_printf (out, "%s=%s\n", key, quoted_value);
 
   g_free (quoted_value);
   g_strfreev (lines);
