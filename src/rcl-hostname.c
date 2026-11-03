@@ -1521,7 +1521,7 @@ do_set_machine_info( RclHostnameDaemon *daemon, const gchar *key,
   {
     g_dbus_method_invocation_return_dbus_error( invocation,
       "org.freedesktop.DBus.Error.InvalidArgs",
-      "Invalid machine-info value: control characters and quotes are not allowed" );
+      "Invalid machine-info value: control characters are not allowed" );
     g_free( sanitised );
     return;
   }
