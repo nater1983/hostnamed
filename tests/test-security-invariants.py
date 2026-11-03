@@ -52,7 +52,7 @@ require(writer.index("lock_machine_info_file (error)") <
 require("atomic_replace_file_mode (RCL_MACHINE_INFO_FILE, out->str," in writer and
         "out->len, 0644, error)" in writer,
         "machine-info replacement must explicitly request mode 0644")
-require("Preserve comments, unknown keys, and all unrelated entries" in writer,
+require("Preserve comments, malformed lines, and unrelated entries" in writer,
         "machine-info updates must preserve unrelated entries")
 
 # Static hostname changes must not write PRETTY_HOSTNAME. The CLI must use
