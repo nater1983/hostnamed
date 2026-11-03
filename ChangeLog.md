@@ -4,6 +4,15 @@ All notable changes to `hostnamed` are documented here, newest release first.
 
 ## [0.4.0] - Unreleased
 
+### D-Bus daemon lifecycle
+- Distinguished intentional D-Bus name takeovers from bus connection loss.
+- Exit cleanly when another live bus client takes ownership instead of
+  repeatedly attempting to reclaim the well-known name.
+- Retain delayed reconnection after a closed or unavailable bus connection,
+  independently of the initial `--replace` option.
+- Tear down the old D-Bus object registration before reconnecting and added
+  regression checks for ownership and reconnect decisions.
+
 ### PolKit authorization
 - Added the standard interactive-authorization argument to
   `GetHardwareSerial`, `SetTags`, and `AddAndRemoveTags`.
