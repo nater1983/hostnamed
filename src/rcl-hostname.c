@@ -658,31 +658,31 @@ rcl_daemon_sync_dbus_properties_internal( RclHostnameDaemon *daemon,
     gchar *chassis_val = read_key_value_file( RCL_MACHINE_INFO_FILE, "CHASSIS" );
     gchar *icon_val    = read_key_value_file( RCL_MACHINE_INFO_FILE, "ICON_NAME" );
 
-    if( chassis_val == NULL || chassis_val[0] == '\0' )
+    if (refresh_hardware)
     {
-      if (refresh_hardware)
+      gchar *dmi_chassis_type = read_dmi (RCL_DMI_CHASSIS_TYPE);
+      chassis_num = (guint) g_ascii_strtoull (dmi_chassis_type, NULL, 10);
+      g_free (dmi_chassis_type);
+
+      g_free (priv->hardware_chassis);
+      priv->hardware_chassis =
+        g_strdup (rcl_chassis_type_to_string (chassis_num));
+
+      if (priv->hardware_chassis[0] == '\0')
       {
-        gchar *dmi_chassis_type = read_dmi( RCL_DMI_CHASSIS_TYPE );
-        chassis_num = (guint) g_ascii_strtoull( dmi_chassis_type, NULL, 10 );
-        g_free( dmi_chassis_type );
-
-        g_free (priv->hardware_chassis);
-        priv->hardware_chassis =
-          g_strdup (rcl_chassis_type_to_string (chassis_num));
-
-        if (priv->hardware_chassis[0] == '\0')
+        gchar *dt = read_dt_string (RCL_DT_CHASSIS_TYPE);
+        if (rcl_chassis_is_known (dt))
         {
-          gchar *dt = read_dt_string (RCL_DT_CHASSIS_TYPE);
-          if (rcl_chassis_is_known (dt))
-          {
-            g_free (priv->hardware_chassis);
-            priv->hardware_chassis = dt;
-          }
-          else
-            g_free (dt);
+          g_free (priv->hardware_chassis);
+          priv->hardware_chassis = dt;
         }
+        else
+          g_free (dt);
       }
+    }
 
+    if (chassis_val == NULL || chassis_val[0] == '\0')
+    {
       g_free (chassis_val);
       chassis_val = g_strdup (priv->hardware_chassis
                               ? priv->hardware_chassis : "");
