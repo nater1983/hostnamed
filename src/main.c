@@ -67,6 +67,7 @@ typedef struct RclState
   gboolean    has_name;
   guint       reconnect_id;
   guint       config_sync_id;
+  guint       config_reconcile_id;
   gboolean    exiting;
 } RclState;
 
@@ -91,6 +92,12 @@ rcl_state_free(RclState *state)
   {
     g_source_remove(state->config_sync_id);
     state->config_sync_id = 0;
+  }
+
+  if (state->config_reconcile_id)
+  {
+    g_source_remove(state->config_reconcile_id);
+    state->config_reconcile_id = 0;
   }
 
   if (state->watch_id)
@@ -353,6 +360,22 @@ rcl_main_config_sync_cb(gpointer user_data)
   return G_SOURCE_REMOVE;
 }
 
+/*
+ * File monitors are the immediate path. Reconcile configuration-only
+ * properties every 30 seconds as a low-frequency safety net for missed
+ * monitor events; this never re-reads DMI or device-tree hardware identity.
+ */
+static gboolean
+rcl_main_config_reconcile_cb(gpointer user_data)
+{
+  RclState *state = user_data;
+
+  if (!state->exiting)
+    rcl_daemon_sync_config_properties(RCL_HOSTNAME_DAEMON(state->daemon));
+
+  return G_SOURCE_CONTINUE;
+}
+
 static void
 rcl_file_watch_free(gpointer user_data, GClosure *closure)
 {
@@ -572,6 +595,9 @@ gint main(gint argc, gchar **argv)
   /* os-release supplies exported operating-system properties too. */
   osrelease_file = g_file_new_for_path(RCL_OS_RELEASE_FILE);
   osrelease_mon = rcl_monitor_config_file(state, RCL_OS_RELEASE_FILE);
+
+  state->config_reconcile_id = g_timeout_add_seconds(30,
+    rcl_main_config_reconcile_cb, state);
 
   /* Acquire the D-Bus name for the first time */
   rcl_acquire_name(state);
