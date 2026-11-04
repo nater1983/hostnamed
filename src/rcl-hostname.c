@@ -185,6 +185,7 @@ struct _RclHostnameDaemonPrivate
   GVariant *machine_id;
   GVariant *boot_id;
   guint32 vsock_cid;
+  gchar *hardware_chassis;
   guint64 firmware_date_usec;   /* µs since Unix epoch; G_MAXUINT64 = unknown */
 };
 
@@ -572,8 +573,9 @@ static gboolean rcl_hostname_is_valid( const gchar *name );
  * Populate (or refresh) all cached properties from the underlying sources,
  * then emit PropertiesChanged for anything that actually changed.
  */
-void
-rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
+static void
+rcl_daemon_sync_dbus_properties_internal( RclHostnameDaemon *daemon,
+                                         gboolean refresh_hardware )
 {
   RclHostnameDaemonPrivate *priv = daemon->priv;
   struct utsname uts;
@@ -658,24 +660,32 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
 
     if( chassis_val == NULL || chassis_val[0] == '\0' )
     {
-      gchar *dmi_chassis_type = read_dmi( RCL_DMI_CHASSIS_TYPE );
-      chassis_num = (guint) g_ascii_strtoull( dmi_chassis_type, NULL, 10 );
-      g_free( dmi_chassis_type );
-
-      g_free( chassis_val );
-      chassis_val = g_strdup( rcl_chassis_type_to_string( chassis_num ) );
-
-      if( chassis_val[0] == '\0' )
+      if (refresh_hardware)
       {
-        gchar *dt = read_dt_string( RCL_DT_CHASSIS_TYPE );
-        if( rcl_chassis_is_known( dt ) )
+        gchar *dmi_chassis_type = read_dmi( RCL_DMI_CHASSIS_TYPE );
+        chassis_num = (guint) g_ascii_strtoull( dmi_chassis_type, NULL, 10 );
+        g_free( dmi_chassis_type );
+
+        g_free (priv->hardware_chassis);
+        priv->hardware_chassis =
+          g_strdup (rcl_chassis_type_to_string (chassis_num));
+
+        if (priv->hardware_chassis[0] == '\0')
         {
-          g_free( chassis_val );
-          chassis_val = dt;
+          gchar *dt = read_dt_string (RCL_DT_CHASSIS_TYPE);
+          if (rcl_chassis_is_known (dt))
+          {
+            g_free (priv->hardware_chassis);
+            priv->hardware_chassis = dt;
+          }
+          else
+            g_free (dt);
         }
-        else
-          g_free( dt );
       }
+
+      g_free (chassis_val);
+      chassis_val = g_strdup (priv->hardware_chassis
+                              ? priv->hardware_chassis : "");
     }
 
     if( icon_val == NULL || icon_val[0] == '\0' )
@@ -749,6 +759,7 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
                    read_key_value_file( RCL_OS_RELEASE_FILE, "IMAGE_VERSION" ),
                    "OperatingSystemImageVersion" );
 
+  if (refresh_hardware)
   {
     gchar *sku=read_dmi("/sys/class/dmi/id/product_sku");
     gchar *version=read_dmi("/sys/class/dmi/id/product_version");
@@ -824,6 +835,7 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
    * usable vendor value, leave HardwareVendor empty rather than report a
    * misleading identifier. HardwareModel may still use device-tree model.
    */
+  if (refresh_hardware)
   {
     gchar *sys_v   = read_dmi( RCL_DMI_SYS_VENDOR );
     gchar *board_v = read_dmi( RCL_DMI_BOARD_VENDOR );
@@ -836,27 +848,24 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
 
     g_free( sys_v ); g_free( board_v );
     g_free( prod );  g_free( board_n ); g_free( dt_m );
-  }
-  {
+
     gchar *bios = read_dmi (RCL_DMI_BIOS_VERSION);
     gchar *usable = first_usable_dup (bios, NULL, NULL);
     UPDATE_STR_PROP (firmware_version, usable, "FirmwareVersion");
     g_free (bios);
-  }
 
-  /* FirmwareDate is type 't' (uint64 µs since epoch) per the spec */
-  {
-    gchar   *date_str = read_dmi (RCL_DMI_BIOS_DATE);
-    guint64  new_usec = parse_firmware_date_usec (date_str);
+    /* FirmwareDate is type 't' (uint64 µs since epoch) per the spec. */
+    gchar *date_str = read_dmi (RCL_DMI_BIOS_DATE);
+    guint64 new_usec = parse_firmware_date_usec (date_str);
     g_free (date_str);
 
     if (priv->firmware_date_usec != new_usec)
-      {
-        priv->firmware_date_usec = new_usec;
-        g_variant_builder_add (&changed_props, "{sv}", "FirmwareDate",
-                               g_variant_new_uint64 (new_usec));
-        any_changed = TRUE;
-      }
+    {
+      priv->firmware_date_usec = new_usec;
+      g_variant_builder_add (&changed_props, "{sv}", "FirmwareDate",
+                             g_variant_new_uint64 (new_usec));
+      any_changed = TRUE;
+    }
   }
 
 #undef UPDATE_STR_PROP
@@ -887,6 +896,18 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
   {
     g_variant_builder_clear( &changed_props );
   }
+}
+
+void
+rcl_daemon_sync_dbus_properties (RclHostnameDaemon *daemon)
+{
+  rcl_daemon_sync_dbus_properties_internal (daemon, TRUE);
+}
+
+void
+rcl_daemon_sync_config_properties (RclHostnameDaemon *daemon)
+{
+  rcl_daemon_sync_dbus_properties_internal (daemon, FALSE);
 }
 
 /* Make a directory-entry change durable after unlink/rename. */
@@ -2236,6 +2257,7 @@ rcl_hostname_daemon_finalize( GObject *object )
   g_free( priv->firmware_version );
   g_free( priv->firmware_vendor );
   g_free( priv->chassis_asset_tag );
+  g_free( priv->hardware_chassis );
   g_clear_pointer( &priv->machine_id, g_variant_unref );
   g_clear_pointer( &priv->boot_id, g_variant_unref );
   /* Scalar properties need no heap cleanup. */
