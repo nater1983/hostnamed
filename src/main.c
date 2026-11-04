@@ -348,7 +348,7 @@ rcl_main_config_sync_cb(gpointer user_data)
 
   state->config_sync_id = 0;
   if (!state->exiting)
-    rcl_daemon_sync_dbus_properties(RCL_HOSTNAME_DAEMON(state->daemon));
+    rcl_daemon_sync_config_properties(RCL_HOSTNAME_DAEMON(state->daemon));
 
   return G_SOURCE_REMOVE;
 }
