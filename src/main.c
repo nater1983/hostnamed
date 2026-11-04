@@ -66,7 +66,7 @@ typedef struct RclState
   guint       watch_id;
   gboolean    has_name;
   guint       reconnect_id;
-  guint       reconcile_id;
+  guint       config_sync_id;
   gboolean    exiting;
 } RclState;
 
@@ -87,10 +87,10 @@ rcl_state_free(RclState *state)
     state->reconnect_id = 0;
   }
 
-  if (state->reconcile_id)
+  if (state->config_sync_id)
   {
-    g_source_remove(state->reconcile_id);
-    state->reconcile_id = 0;
+    g_source_remove(state->config_sync_id);
+    state->config_sync_id = 0;
   }
 
   if (state->watch_id)
@@ -336,19 +336,21 @@ rcl_main_log_handler_cb(const gchar    *log_domain,
 /* ───────────────────────────────────────────── */
 
 /*
- * File monitors provide immediate updates, but events may be coalesced or
- * lost under load. Periodically re-read configured files so cached D-Bus
- * properties eventually converge on the actual on-disk state.
+ * Coalesce bursts of directory-monitor events (including the multiple events
+ * produced by atomic rename) into one property refresh. Configuration is
+ * refreshed on demand; static DMI/device-tree identity is no longer polled
+ * on a fixed two-second timer.
  */
 static gboolean
-rcl_main_reconcile_files_cb(gpointer user_data)
+rcl_main_config_sync_cb(gpointer user_data)
 {
   RclState *state = user_data;
 
+  state->config_sync_id = 0;
   if (!state->exiting)
     rcl_daemon_sync_dbus_properties(RCL_HOSTNAME_DAEMON(state->daemon));
 
-  return G_SOURCE_CONTINUE;
+  return G_SOURCE_REMOVE;
 }
 
 static void
@@ -388,10 +390,11 @@ rcl_main_directory_changed(GFileMonitor      *monitor,
   if (!relevant)
     return;
 
-  LOG(watch->state, "change to %s detected; syncing D-Bus properties",
+  LOG(watch->state, "change to %s detected; scheduling D-Bus property sync",
       watch->basename);
-  rcl_daemon_sync_dbus_properties(
-    RCL_HOSTNAME_DAEMON(watch->state->daemon));
+  if (!watch->state->config_sync_id && !watch->state->exiting)
+    watch->state->config_sync_id = g_timeout_add(100,
+      rcl_main_config_sync_cb, watch->state);
 }
 
 static GFileMonitor *
@@ -476,8 +479,10 @@ gint main(gint argc, gchar **argv)
 
   GFile        *hostname_file;
   GFile        *machineinfo_file;
+  GFile        *osrelease_file;
   GFileMonitor *hostname_mon;
   GFileMonitor *machineinfo_mon;
+  GFileMonitor *osrelease_mon;
 
   const GOptionEntry options[] =
   {
@@ -564,13 +569,9 @@ gint main(gint argc, gchar **argv)
   machineinfo_file = g_file_new_for_path(RCL_MACHINE_INFO_FILE);
   machineinfo_mon = rcl_monitor_config_file(state, RCL_MACHINE_INFO_FILE);
 
-  /*
-   * Reconcile every two seconds as a safety net for coalesced/lost monitor
-   * events and inotify queue pressure. The monitor remains the fast path.
-   */
-  state->reconcile_id = g_timeout_add_seconds(2,
-                                               rcl_main_reconcile_files_cb,
-                                               state);
+  /* os-release supplies exported operating-system properties too. */
+  osrelease_file = g_file_new_for_path(RCL_OS_RELEASE_FILE);
+  osrelease_mon = rcl_monitor_config_file(state, RCL_OS_RELEASE_FILE);
 
   /* Acquire the D-Bus name for the first time */
   rcl_acquire_name(state);
@@ -583,8 +584,10 @@ gint main(gint argc, gchar **argv)
 
   g_clear_object(&hostname_mon);
   g_clear_object(&machineinfo_mon);
+  g_clear_object(&osrelease_mon);
   g_clear_object(&hostname_file);
   g_clear_object(&machineinfo_file);
+  g_clear_object(&osrelease_file);
 
   /* rcl_state_free cancels any pending reconnect timer and unowns the name */
   rcl_state_free(state);
