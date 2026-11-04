@@ -127,13 +127,13 @@ GType              rcl_hostname_daemon_get_type ( void ) G_GNUC_CONST;
 /*
  * rcl_daemon_sync_dbus_properties:
  *
- * Re-reads /etc/hostname, /etc/machine-info, /etc/os-release, uname(2),
- * and any DMI sysfs nodes, then emits PropertiesChanged on the D-Bus
- * object for every value that has changed since the last call.
+ * Performs a full property refresh, including DMI and device-tree hardware
+ * discovery. Used during startup and after explicit daemon-side mutations.
  *
- * Called from main.c's inotify callback whenever a watched file changes.
- * Also called once during startup (from rcl_daemon_startup) to populate
- * the initial property values.
+ * rcl_daemon_sync_config_properties:
+ *
+ * Refreshes file-backed and runtime properties without repeating hardware
+ * discovery. Used for configuration monitor events and periodic reconciliation.
  */
 void rcl_daemon_sync_dbus_properties ( RclHostnameDaemon *daemon );
 void rcl_daemon_sync_config_properties ( RclHostnameDaemon *daemon );
