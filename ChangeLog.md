@@ -4,6 +4,15 @@ All notable changes to `hostnamed` are documented here, newest release first.
 
 ## [0.4.0] - Unreleased
 
+### Configuration monitoring and refresh efficiency
+
+- Debounce configuration directory-monitor events before refreshing D-Bus properties.
+- Monitor `/etc/HOSTNAME`, `/etc/machine-info`, and the configured `os-release` file, including atomic replacements.
+- Separate configuration refreshes from hardware discovery; configuration updates reuse cached DMI/device-tree identity.
+- Replace the two-second full-property poll with a 30-second configuration-only reconciliation safety net.
+- Add regression coverage for event-driven monitoring and hardware-refresh separation.
+
+
 ### Configuration parsing and persistence
 - Replaced the simplistic KEY=value reader with a non-executing parser for
   quoted and unquoted assignments, comments, and escaped characters.
