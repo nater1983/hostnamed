@@ -63,3 +63,12 @@ test(
     join_paths(meson.project_source_root(), 'src', 'rcl-hostname.c'),
   ],
 )
+
+test(
+  'configuration-monitoring',
+  python,
+  args : [
+    files('test-config-monitoring.py'),
+    join_paths(meson.project_source_root(), 'src', 'main.c'),
+  ],
+)
