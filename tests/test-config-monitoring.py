@@ -32,7 +32,8 @@ require("g_timeout_add_seconds(30" in source,
         "a low-frequency configuration-only reconciliation must remain enabled")
 require("config_reconcile_id" in source,
         "the configuration reconciliation timer must be cancelled on shutdown")
-require("reconcile_id" not in source,
+require("state->reconcile_id" not in source and
+        "rcl_main_reconcile_files_cb" not in source,
         "the obsolete periodic full-refresh source must be removed")
 
 print("event-driven configuration monitoring invariants: PASS")
