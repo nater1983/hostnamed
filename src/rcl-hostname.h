@@ -136,6 +136,7 @@ GType              rcl_hostname_daemon_get_type ( void ) G_GNUC_CONST;
  * the initial property values.
  */
 void rcl_daemon_sync_dbus_properties ( RclHostnameDaemon *daemon );
+void rcl_daemon_sync_config_properties ( RclHostnameDaemon *daemon );
 
 /*---------------------------------------------------------------------------
   Polkit action IDs used when authorising Set* method calls.
