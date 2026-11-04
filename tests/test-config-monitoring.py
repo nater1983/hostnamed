@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 
 source = Path(sys.argv[1]).read_text(encoding="utf-8")
+hardware_source = Path(sys.argv[2]).read_text(encoding="utf-8")
 
 
 def require(condition, message):
@@ -25,8 +26,12 @@ require("g_timeout_add_seconds(2" not in source,
         "the daemon must not poll all hardware properties every two seconds")
 require("rcl_daemon_sync_config_properties" in source,
         "configuration events must use the configuration-only refresh path")
-require("refresh_hardware" in source,
+require("refresh_hardware" in hardware_source,
         "hardware discovery must be separated from configuration refreshes")
+require("g_timeout_add_seconds(30" in source,
+        "a low-frequency configuration-only reconciliation must remain enabled")
+require("config_reconcile_id" in source,
+        "the configuration reconciliation timer must be cancelled on shutdown")
 require("reconcile_id" not in source,
         "the obsolete periodic full-refresh source must be removed")
 
