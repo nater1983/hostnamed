@@ -70,5 +70,6 @@ test(
   args : [
     files('test-config-monitoring.py'),
     join_paths(meson.project_source_root(), 'src', 'main.c'),
+    join_paths(meson.project_source_root(), 'src', 'rcl-hostname.c'),
   ],
 )
