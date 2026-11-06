@@ -2,6 +2,7 @@ hostnamed_sources = files(
   'main.c',
   'rcl-hostname.c',
   'rcl-hardware.c',
+  'rcl-polkit.c',
 )
 
 hostnamed_deps = [
