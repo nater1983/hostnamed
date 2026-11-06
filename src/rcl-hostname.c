@@ -1415,14 +1415,9 @@ check_polkit_async (AuthCtx *ctx, const gchar *action_id, gboolean interactive)
 /* --------------------------------------------------------------------------
    D-Bus property getter
    -------------------------------------------------------------------------- */
-static GVariant *
-handle_get_property( GDBusConnection  *connection,
-                     const gchar      *sender,
-                     const gchar      *object_path,
-                     const gchar      *interface_name,
-                     const gchar      *property_name,
-                     GError          **error,
-                     gpointer          user_data )
+GVariant *
+rcl_hostname_get_property_value( const gchar *property_name,
+                                 GError **error, gpointer user_data )
 {
   RclHostnameDaemon        *daemon = RCL_HOSTNAME_DAEMON( user_data );
   RclHostnameDaemonPrivate *priv   = daemon->priv;
@@ -1473,8 +1468,8 @@ handle_get_property( GDBusConnection  *connection,
 /* --------------------------------------------------------------------------
    D-Bus method handler
    -------------------------------------------------------------------------- */
-static void
-handle_method_call( GDBusConnection       *connection,
+void
+rcl_hostname_dispatch_method( GDBusConnection       *connection,
                     const gchar           *sender,
                     const gchar           *object_path,
                     const gchar           *interface_name,
@@ -1666,8 +1661,8 @@ handle_method_call( GDBusConnection       *connection,
    D-Bus vtable
    -------------------------------------------------------------------------- */
 static const GDBusInterfaceVTable interface_vtable = {
-  handle_method_call,
-  handle_get_property,
+  rcl_dbus_handle_method_call,
+  rcl_dbus_handle_get_property,
   rcl_dbus_handle_set_property,
 };
 
