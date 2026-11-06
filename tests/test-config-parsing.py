@@ -33,7 +33,7 @@ for fragment, message in [
 
 reader = function_body(
     "read_key_value_file (const gchar *path, const gchar *key)",
-    "/* Read a DMI sysfs file",
+    "static gboolean rcl_hostname_is_valid",
 )
 require("parse_key_value_line (lines[i], key)" in reader,
         "file reads must use the shared assignment parser")
