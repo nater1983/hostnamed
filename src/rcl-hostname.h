@@ -160,5 +160,23 @@ GVariant *rcl_hostname_get_property_value (const gchar *property_name,
                                            GError **error, gpointer daemon);
 void rcl_hostname_dispatch_method (GDBusConnection *connection,
   const gchar *sender, const gchar *object_path, const gchar *interface_name,
-  const gchar *method_name, GVariant *parameters,
+  RclHostnameMethod method, GVariant *parameters,
   GDBusMethodInvocation *invocation, gpointer daemon);
+
+/* Resolved method identifiers passed from the D-Bus routing layer. */
+typedef enum {
+  RCL_METHOD_UNKNOWN = 0,
+  RCL_METHOD_SET_HOSTNAME, /* SetHostname */
+  RCL_METHOD_SET_STATIC_HOSTNAME, /* SetStaticHostname */
+  RCL_METHOD_SET_PRETTY_HOSTNAME, /* SetPrettyHostname */
+  RCL_METHOD_SET_ICON_NAME, /* SetIconName */
+  RCL_METHOD_SET_CHASSIS, /* SetChassis */
+  RCL_METHOD_SET_DEPLOYMENT, /* SetDeployment */
+  RCL_METHOD_SET_LOCATION, /* SetLocation */
+  RCL_METHOD_GET_HARDWARE_SERIAL, /* GetHardwareSerial */
+  RCL_METHOD_GET_PRODUCT_UUID, /* GetProductUUID */
+  RCL_METHOD_SET_TAGS, /* SetTags */
+  RCL_METHOD_ADD_AND_REMOVE_TAGS, /* AddAndRemoveTags */
+  RCL_METHOD_GET_MACHINE_INFO, /* GetMachineInfo */
+  RCL_METHOD_DESCRIBE, /* Describe */
+} RclHostnameMethod;
