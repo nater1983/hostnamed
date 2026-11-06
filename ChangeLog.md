@@ -2,11 +2,13 @@
 
 All notable changes to `hostnamed` are documented here, newest release first.
 
-## [0.3.2] - 2026-11-02
+## [0.3.3] - Unreleased
 
 ### D-Bus interface and authorization compatibility
 - Removed incorrect immutable-property annotations from seven os-release-backed properties in both embedded and installed D-Bus introspection.
 - Aligned the installed D-Bus XML signatures for GetHardwareSerial, SetTags, and AddAndRemoveTags with the existing interactive authorization implementation.
+
+## [0.3.2] - 2026-11-02
 
 ### Maintenance fixes
 - Distinguish an intentional D-Bus name takeover from an actual bus
