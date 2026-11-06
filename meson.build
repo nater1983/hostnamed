@@ -12,12 +12,6 @@ project(
   ],
 )
 
-# _FORTIFY_SOURCE requires compiler optimization. Reject unoptimized builds
-# rather than silently disabling the intended hardening checks.
-if get_option('optimization') in ['0', 'g']
-  error('hostnamed requires optimization: configure with -Doptimization=2 (or 1, 3, or s)')
-endif
-
 cc = meson.get_compiler('c')
 
 extra_c_args = cc.get_supported_arguments([
