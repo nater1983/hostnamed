@@ -57,3 +57,13 @@ gchar       *rcl_hardware_first_usable_dup (const gchar *a,
                                              const gchar *c);
 gchar       *rcl_hardware_read_dt_string (const gchar *path);
 guint64      rcl_hardware_parse_firmware_date_usec (const gchar *date_str);
+
+/* Owned snapshot of DMI/device-tree hardware identity. */
+typedef struct {
+  gchar *chassis, *vendor, *model, *sku, *version;
+  gchar *firmware_version, *firmware_vendor, *chassis_asset_tag;
+  guint64 firmware_date_usec;
+} RclHardwareSnapshot;
+
+RclHardwareSnapshot *rcl_hardware_snapshot_new (void);
+void rcl_hardware_snapshot_free (RclHardwareSnapshot *snapshot);
