@@ -3,7 +3,7 @@
 from pathlib import Path
 import sys
 
-source = Path(sys.argv[1]).read_text(encoding="utf-8")
+source = (Path(sys.argv[1]).parent / "rcl-config.c").read_text(encoding="utf-8")
 
 
 def require(condition, message):
@@ -12,8 +12,10 @@ def require(condition, message):
 
 
 def function_body(signature, next_marker):
-    start = source.index(signature)
-    end = source.index(next_marker, start)
+    start = source.rindex(signature)
+    end = source.find(next_marker, start)
+    if end < 0:
+        end = len(source)
     return source[start:end]
 
 
@@ -61,7 +63,7 @@ require("atomic_replace_file_mode" in writer,
 
 quote = function_body(
     "rcl_machine_info_quote_value (const gchar *value)",
-    "print(\"configuration parsing and writing invariants: PASS\")",
+    "/* End of configuration helpers */",
 )
 require("*p == '\\\\' || *p == '\"'" in quote,
         "machine-info serialization must escape backslashes and quotes")
