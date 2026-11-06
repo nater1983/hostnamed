@@ -42,6 +42,7 @@
 #include "rcl-hostname.h"
 #include "rcl-hardware.h"
 #include "rcl-polkit.h"
+#include "rcl-dbus.h"
 
 /* --------------------------------------------------------------------------
    The org.freedesktop.hostname1 introspection XML.
@@ -50,97 +51,6 @@
    the lifetime of the process.  All method/property names here must match
    the handler and getter/setter functions below.
    -------------------------------------------------------------------------- */
-static const gchar hostname1_introspection_xml[] =
-  "<node>"
-  "  <interface name='org.freedesktop.hostname1'>"
-  /* ---- read-only properties ---- */
-  "    <property name='Hostname'                    type='s' access='read'/>"
-  "    <property name='StaticHostname'              type='s' access='read'/>"
-  "    <property name='PrettyHostname'              type='s' access='read'/>"
-  "    <property name='DefaultHostname'             type='s' access='read'><annotation name='org.freedesktop.DBus.Property.EmitsChangedSignal' value='const'/></property>"
-  "    <property name='HostnameSource'              type='s' access='read'/>"
-  "    <property name='IconName'                    type='s' access='read'/>"
-  "    <property name='Chassis'                     type='s' access='read'/>"
-  "    <property name='Deployment'                  type='s' access='read'/>"
-  "    <property name='Location'                    type='s' access='read'/>"
-  "    <property name='Tags'                         type='as' access='read'/>"
-  "    <property name='KernelName'                  type='s' access='read'><annotation name='org.freedesktop.DBus.Property.EmitsChangedSignal' value='const'/></property>"
-  "    <property name='KernelRelease'               type='s' access='read'><annotation name='org.freedesktop.DBus.Property.EmitsChangedSignal' value='const'/></property>"
-  "    <property name='KernelVersion'               type='s' access='read'><annotation name='org.freedesktop.DBus.Property.EmitsChangedSignal' value='const'/></property>"
-  "    <property name='OperatingSystemPrettyName'   type='s' access='read'/>"
-  "    <property name='OperatingSystemFancyName'    type='s' access='read'/>"
-  "    <property name='OperatingSystemCPEName'      type='s' access='read'/>"
-  "    <property name='OperatingSystemSupportEnd'   type='t' access='read'/>"
-  "    <property name='HomeURL'                     type='s' access='read'/>"
-  "    <property name='OperatingSystemImageID'      type='s' access='read'/>"
-  "    <property name='OperatingSystemImageVersion' type='s' access='read'/>"
-  "    <property name='HardwareVendor'              type='s' access='read'><annotation name='org.freedesktop.DBus.Property.EmitsChangedSignal' value='const'/></property>"
-  "    <property name='HardwareModel'               type='s' access='read'><annotation name='org.freedesktop.DBus.Property.EmitsChangedSignal' value='const'/></property>"
-  "    <property name='HardwareSKU'                 type='s' access='read'><annotation name='org.freedesktop.DBus.Property.EmitsChangedSignal' value='const'/></property>"
-  "    <property name='HardwareVersion'             type='s' access='read'><annotation name='org.freedesktop.DBus.Property.EmitsChangedSignal' value='const'/></property>"
-  "    <property name='FirmwareVersion'             type='s' access='read'><annotation name='org.freedesktop.DBus.Property.EmitsChangedSignal' value='const'/></property>"
-  "    <property name='FirmwareVendor'              type='s' access='read'><annotation name='org.freedesktop.DBus.Property.EmitsChangedSignal' value='const'/></property>"
-  "    <property name='FirmwareDate'                type='t' access='read'><annotation name='org.freedesktop.DBus.Property.EmitsChangedSignal' value='const'/></property>"
-  "    <property name='MachineID'                   type='ay' access='read'><annotation name='org.freedesktop.DBus.Property.EmitsChangedSignal' value='const'/></property>"
-  "    <property name='BootID'                      type='ay' access='read'><annotation name='org.freedesktop.DBus.Property.EmitsChangedSignal' value='const'/></property>"
-  "    <property name='VSockCID'                    type='u' access='read'><annotation name='org.freedesktop.DBus.Property.EmitsChangedSignal' value='const'/></property>"
-  "    <property name='ChassisAssetTag'             type='s' access='read'><annotation name='org.freedesktop.DBus.Property.EmitsChangedSignal' value='const'/></property>"
-  /* ---- methods ---- */
-  "    <method name='SetHostname'>"
-  "      <arg name='name'        type='s' direction='in'/>"
-  "      <arg name='interactive' type='b' direction='in'/>"
-  "    </method>"
-  "    <method name='SetStaticHostname'>"
-  "      <arg name='name'        type='s' direction='in'/>"
-  "      <arg name='interactive' type='b' direction='in'/>"
-  "    </method>"
-  "    <method name='SetPrettyHostname'>"
-  "      <arg name='name'        type='s' direction='in'/>"
-  "      <arg name='interactive' type='b' direction='in'/>"
-  "    </method>"
-  "    <method name='SetIconName'>"
-  "      <arg name='name'        type='s' direction='in'/>"
-  "      <arg name='interactive' type='b' direction='in'/>"
-  "    </method>"
-  "    <method name='SetChassis'>"
-  "      <arg name='name'        type='s' direction='in'/>"
-  "      <arg name='interactive' type='b' direction='in'/>"
-  "    </method>"
-  "    <method name='SetDeployment'>"
-  "      <arg name='name'        type='s' direction='in'/>"
-  "      <arg name='interactive' type='b' direction='in'/>"
-  "    </method>"
-  "    <method name='SetLocation'>"
-  "      <arg name='name'        type='s' direction='in'/>"
-  "      <arg name='interactive' type='b' direction='in'/>"
-  "    </method>"
-  "    <method name='GetProductUUID'>"
-  "      <arg name='interactive' type='b' direction='in'/>"
-  "      <arg name='uuid'        type='ay' direction='out'/>"
-  "    </method>"
-  "    <method name='GetHardwareSerial'>"
-  "      <arg name='interactive' type='b' direction='in'/>"
-  "      <arg name='serial'      type='s' direction='out'/>"
-  "    </method>"
-  "    <method name='SetTags'>"
-  "      <arg name='tags' type='as' direction='in'/>"
-  "      <arg name='interactive' type='b' direction='in'/>"
-  "    </method>"
-  "    <method name='AddAndRemoveTags'>"
-  "      <arg name='add' type='as' direction='in'/>"
-  "      <arg name='remove' type='as' direction='in'/>"
-  "      <arg name='interactive' type='b' direction='in'/>"
-  "    </method>"
-  "    <method name='GetMachineInfo'>"
-  "      <arg name='field' type='s' direction='in'/>"
-  "      <arg name='value' type='s' direction='out'/>"
-  "    </method>"
-  "    <method name='Describe'>"
-  "      <arg name='json' type='s' direction='out'/>"
-  "    </method>"
-  "  </interface>"
-  "</node>";
-
 /* --------------------------------------------------------------------------
    Private data
    -------------------------------------------------------------------------- */
@@ -1792,7 +1702,6 @@ rcl_daemon_startup( RclDaemon *daemon, GDBusConnection *connection )
 {
   RclHostnameDaemon        *self = RCL_HOSTNAME_DAEMON( daemon );
   RclHostnameDaemonPrivate *priv = self->priv;
-  GDBusInterfaceInfo       *iface_info;
   GError *error = NULL;
 
   /* A bus restart requires a fresh PolKit authority as well. */
@@ -1808,17 +1717,8 @@ rcl_daemon_startup( RclDaemon *daemon, GDBusConnection *connection )
     return FALSE;
   }
 
-  iface_info = g_dbus_node_info_lookup_interface(
-                 priv->introspection, "org.freedesktop.hostname1" );
-
-  priv->registration_id = g_dbus_connection_register_object(
-    connection,
-    "/org/freedesktop/hostname1",
-    iface_info,
-    &interface_vtable,
-    self,
-    NULL,
-    &error );
+  priv->registration_id = rcl_dbus_register(
+    connection, priv->introspection, &interface_vtable, self, &error );
 
   if( priv->registration_id == 0 )
   {
