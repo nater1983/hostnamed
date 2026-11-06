@@ -572,8 +572,9 @@ static gboolean rcl_hostname_is_valid( const gchar *name );
  * Populate (or refresh) all cached properties from the underlying sources,
  * then emit PropertiesChanged for anything that actually changed.
  */
-void
-rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
+static void
+rcl_daemon_sync_dbus_properties_internal( RclHostnameDaemon *daemon,
+                                          gboolean refresh_hardware )
 {
   RclHostnameDaemonPrivate *priv = daemon->priv;
   struct utsname uts;
@@ -656,7 +657,8 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
     gchar *chassis_val = read_key_value_file( RCL_MACHINE_INFO_FILE, "CHASSIS" );
     gchar *icon_val    = read_key_value_file( RCL_MACHINE_INFO_FILE, "ICON_NAME" );
 
-    if( chassis_val == NULL || chassis_val[0] == '\0' )
+    if( (chassis_val == NULL || chassis_val[0] == '\0') &&
+        (refresh_hardware || priv->chassis == NULL) )
     {
       gchar *dmi_chassis_type = read_dmi( RCL_DMI_CHASSIS_TYPE );
       chassis_num = (guint) g_ascii_strtoull( dmi_chassis_type, NULL, 10 );
@@ -676,6 +678,12 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
         else
           g_free( dt );
       }
+    }
+
+    if( (chassis_val == NULL || chassis_val[0] == '\0') && !refresh_hardware && priv->chassis )
+    {
+      g_free (chassis_val);
+      chassis_val = g_strdup (priv->chassis);
     }
 
     if( icon_val == NULL || icon_val[0] == '\0' )
@@ -749,6 +757,7 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
                    read_key_value_file( RCL_OS_RELEASE_FILE, "IMAGE_VERSION" ),
                    "OperatingSystemImageVersion" );
 
+  if (refresh_hardware)
   {
     gchar *sku=read_dmi("/sys/class/dmi/id/product_sku");
     gchar *version=read_dmi("/sys/class/dmi/id/product_version");
@@ -809,6 +818,7 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
     }
   }
 
+  if (refresh_hardware)
   {
     guint32 cid=G_MAXUINT32;
     gchar *cidstr=read_first_line("/sys/class/misc/vsock/dev");
@@ -824,6 +834,7 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
    * usable vendor value, leave HardwareVendor empty rather than report a
    * misleading identifier. HardwareModel may still use device-tree model.
    */
+  if (refresh_hardware)
   {
     gchar *sys_v   = read_dmi( RCL_DMI_SYS_VENDOR );
     gchar *board_v = read_dmi( RCL_DMI_BOARD_VENDOR );
@@ -837,6 +848,7 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
     g_free( sys_v ); g_free( board_v );
     g_free( prod );  g_free( board_n ); g_free( dt_m );
   }
+  if (refresh_hardware)
   {
     gchar *bios = read_dmi (RCL_DMI_BIOS_VERSION);
     gchar *usable = first_usable_dup (bios, NULL, NULL);
@@ -845,6 +857,7 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
   }
 
   /* FirmwareDate is type 't' (uint64 µs since epoch) per the spec */
+  if (refresh_hardware)
   {
     gchar   *date_str = read_dmi (RCL_DMI_BIOS_DATE);
     guint64  new_usec = parse_firmware_date_usec (date_str);
@@ -887,6 +900,20 @@ rcl_daemon_sync_dbus_properties( RclHostnameDaemon *daemon )
   {
     g_variant_builder_clear( &changed_props );
   }
+}
+
+/* Full refresh for startup and explicit hardware-dependent operations. */
+void
+rcl_daemon_sync_dbus_properties (RclHostnameDaemon *daemon)
+{
+  rcl_daemon_sync_dbus_properties_internal (daemon, TRUE);
+}
+
+/* File-monitor and reconciliation refreshes never probe sysfs hardware. */
+void
+rcl_daemon_sync_config_properties (RclHostnameDaemon *daemon)
+{
+  rcl_daemon_sync_dbus_properties_internal (daemon, FALSE);
 }
 
 /* Make a directory-entry change durable after unlink/rename. */
@@ -2208,7 +2235,8 @@ rcl_hostname_daemon_finalize( GObject *object )
 {
   RclHostnameDaemonPrivate *priv = RCL_HOSTNAME_DAEMON(object)->priv;
 
-  g_clear_object( &priv->authority );
+  /* Safe even when the caller already performed explicit shutdown. */
+  rcl_daemon_shutdown (RCL_DAEMON (object));
 
   g_free( priv->hostname );
   g_free( priv->static_hostname );
