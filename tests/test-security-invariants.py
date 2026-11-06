@@ -74,8 +74,8 @@ require("/etc/machine-info" not in hostnamectl and
 
 # Machine-info access is restricted to valid field names; unknown/missing
 # fields are rejected instead of exposing arbitrary files.
-get_start = source.index('g_strcmp0(method_name, "GetMachineInfo")')
-get_end = source.index('if( g_strcmp0(method_name, "Describe")', get_start)
+get_start = source.index("method == RCL_METHOD_GET_MACHINE_INFO")
+get_end = source.index("method == RCL_METHOD_DESCRIBE", get_start)
 get_handler = source[get_start:get_end]
 require('g_regex_match_simple("^[A-Z][A-Z0-9_]*$"' in get_handler,
         "machine-info field names must be validated")
