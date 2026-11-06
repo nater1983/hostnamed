@@ -33,7 +33,7 @@ for fragment, message in [
 
 reader = function_body(
     "read_key_value_file (const gchar *path, const gchar *key)",
-    "static gboolean rcl_hostname_is_valid",
+    "/* Make a directory-entry change durable",
 )
 require("parse_key_value_line (lines[i], key)" in reader,
         "file reads must use the shared assignment parser")
@@ -46,7 +46,7 @@ require("g_shell_parse_argv" not in source and "g_spawn" not in source,
 
 writer = function_body(
     "write_machine_info_key (const gchar *key, const gchar *value, GError **error)",
-    "/* --------------------------------------------------------------------------\n   Input validation",
+    "static gboolean\nrcl_machine_info_value_is_safe (const gchar *value)",
 )
 require("parse_key_value_line (lines[i], key)" in writer,
         "updates must identify existing assignments with the shared parser")
@@ -61,7 +61,7 @@ require("atomic_replace_file_mode" in writer,
 
 quote = function_body(
     "rcl_machine_info_quote_value (const gchar *value)",
-    "/* --------------------------------------------------------------------------\n   JSON string escaping",
+    "print(\"configuration parsing and writing invariants: PASS\")",
 )
 require("*p == '\\\\' || *p == '\"'" in quote,
         "machine-info serialization must escape backslashes and quotes")
