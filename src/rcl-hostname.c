@@ -1708,8 +1708,7 @@ rcl_daemon_startup( RclDaemon *daemon, GDBusConnection *connection )
   g_clear_object( &priv->authority );
 
   priv->connection    = g_object_ref( connection );
-  priv->introspection = g_dbus_node_info_new_for_xml(
-                          hostname1_introspection_xml, &error );
+  priv->introspection = rcl_dbus_introspection_new( &error );
   if( !priv->introspection )
   {
     g_warning( "Failed to parse introspection XML: %s", error->message );
