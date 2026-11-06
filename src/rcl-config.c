@@ -174,7 +174,7 @@ read_key_value_file (const gchar *path, const gchar *key)
 
 
 /* Make a directory-entry change durable after unlink/rename. */
-static gboolean
+gboolean
 sync_parent_directory (const gchar *path, GError **error)
 {
   gchar *dir = g_path_get_dirname (path);
