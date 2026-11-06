@@ -459,7 +459,7 @@ rcl_daemon_sync_dbus_properties_internal( RclHostnameDaemon *daemon,
 
     if (refresh_hardware)
     {
-      gchar *dmi_chassis_type = rcl_hardware_rcl_hardware_read_dmi(RCL_DMI_CHASSIS_TYPE);
+      gchar *dmi_chassis_type = rcl_hardware_read_dmi(RCL_DMI_CHASSIS_TYPE);
       chassis_num = (guint) g_ascii_strtoull (dmi_chassis_type, NULL, 10);
       g_free (dmi_chassis_type);
 
@@ -469,7 +469,7 @@ rcl_daemon_sync_dbus_properties_internal( RclHostnameDaemon *daemon,
 
       if (priv->hardware_chassis[0] == '\0')
       {
-        gchar *dt = rcl_hardware_rcl_hardware_read_dt_string(RCL_DT_CHASSIS_TYPE);
+        gchar *dt = rcl_hardware_read_dt_string(RCL_DT_CHASSIS_TYPE);
         if (rcl_hardware_chassis_is_known(dt))
         {
           g_free (priv->hardware_chassis);
@@ -560,14 +560,14 @@ rcl_daemon_sync_dbus_properties_internal( RclHostnameDaemon *daemon,
 
   if (refresh_hardware)
   {
-    gchar *sku=rcl_hardware_rcl_hardware_read_dmi("/sys/class/dmi/id/product_sku");
-    gchar *version=rcl_hardware_rcl_hardware_read_dmi("/sys/class/dmi/id/product_version");
-    gchar *bios_vendor=rcl_hardware_rcl_hardware_read_dmi("/sys/class/dmi/id/bios_vendor");
-    gchar *chassis_vendor=rcl_hardware_rcl_hardware_read_dmi(RCL_DMI_CHASSIS_VENDOR);
-    gchar *asset_tag=rcl_hardware_rcl_hardware_read_dmi("/sys/class/dmi/id/chassis_asset_tag");
+    gchar *sku=rcl_hardware_read_dmi("/sys/class/dmi/id/product_sku");
+    gchar *version=rcl_hardware_read_dmi("/sys/class/dmi/id/product_version");
+    gchar *bios_vendor=rcl_hardware_read_dmi("/sys/class/dmi/id/bios_vendor");
+    gchar *chassis_vendor=rcl_hardware_read_dmi(RCL_DMI_CHASSIS_VENDOR);
+    gchar *asset_tag=rcl_hardware_read_dmi("/sys/class/dmi/id/chassis_asset_tag");
     UPDATE_STR_PROP(hw_sku, sku, "HardwareSKU");
     UPDATE_STR_PROP(hw_version, version, "HardwareVersion");
-    UPDATE_STR_PROP(firmware_vendor, rcl_hardware_rcl_hardware_first_usable_dup(bios_vendor, chassis_vendor, ""), "FirmwareVendor");
+    UPDATE_STR_PROP(firmware_vendor, rcl_hardware_first_usable_dup(bios_vendor, chassis_vendor, ""), "FirmwareVendor");
     UPDATE_STR_PROP(chassis_asset_tag, asset_tag, "ChassisAssetTag");
     g_free(bios_vendor); g_free(chassis_vendor);
   }
@@ -636,26 +636,26 @@ rcl_daemon_sync_dbus_properties_internal( RclHostnameDaemon *daemon,
    */
   if (refresh_hardware)
   {
-    gchar *sys_v   = rcl_hardware_rcl_hardware_read_dmi( RCL_DMI_SYS_VENDOR );
-    gchar *board_v = rcl_hardware_rcl_hardware_read_dmi( RCL_DMI_BOARD_VENDOR );
-    gchar *prod    = rcl_hardware_rcl_hardware_read_dmi( RCL_DMI_PRODUCT_NAME );
-    gchar *board_n = rcl_hardware_rcl_hardware_read_dmi( RCL_DMI_BOARD_NAME );
-    gchar *dt_m    = rcl_hardware_rcl_hardware_read_dt_string( RCL_DT_MODEL );
+    gchar *sys_v   = rcl_hardware_read_dmi( RCL_DMI_SYS_VENDOR );
+    gchar *board_v = rcl_hardware_read_dmi( RCL_DMI_BOARD_VENDOR );
+    gchar *prod    = rcl_hardware_read_dmi( RCL_DMI_PRODUCT_NAME );
+    gchar *board_n = rcl_hardware_read_dmi( RCL_DMI_BOARD_NAME );
+    gchar *dt_m    = rcl_hardware_read_dt_string( RCL_DT_MODEL );
 
-    UPDATE_STR_PROP( hw_vendor, rcl_hardware_rcl_hardware_first_usable_dup( sys_v, board_v, "" ), "HardwareVendor" );
-    UPDATE_STR_PROP( hw_model,  rcl_hardware_rcl_hardware_first_usable_dup( prod, board_n, dt_m ), "HardwareModel" );
+    UPDATE_STR_PROP( hw_vendor, rcl_hardware_first_usable_dup( sys_v, board_v, "" ), "HardwareVendor" );
+    UPDATE_STR_PROP( hw_model,  rcl_hardware_first_usable_dup( prod, board_n, dt_m ), "HardwareModel" );
 
     g_free( sys_v ); g_free( board_v );
     g_free( prod );  g_free( board_n ); g_free( dt_m );
 
-    gchar *bios = rcl_hardware_rcl_hardware_read_dmi(RCL_DMI_BIOS_VERSION);
-    gchar *usable = rcl_hardware_rcl_hardware_first_usable_dup(bios, NULL, NULL);
+    gchar *bios = rcl_hardware_read_dmi(RCL_DMI_BIOS_VERSION);
+    gchar *usable = rcl_hardware_first_usable_dup(bios, NULL, NULL);
     UPDATE_STR_PROP (firmware_version, usable, "FirmwareVersion");
     g_free (bios);
 
     /* FirmwareDate is type 't' (uint64 µs since epoch) per the spec. */
-    gchar *date_str = rcl_hardware_rcl_hardware_read_dmi(RCL_DMI_BIOS_DATE);
-    guint64 new_usec = rcl_hardware_rcl_hardware_parse_firmware_date_usec(date_str);
+    gchar *date_str = rcl_hardware_read_dmi(RCL_DMI_BIOS_DATE);
+    guint64 new_usec = rcl_hardware_parse_firmware_date_usec(date_str);
     g_free (date_str);
 
     if (priv->firmware_date_usec != new_usec)
@@ -1413,7 +1413,7 @@ parse_uuid_bytes( const gchar *str, guchar out[16] )
 static void
 do_get_product_uuid( GDBusMethodInvocation *invocation )
 {
-  gchar          *uuid_str = rcl_hardware_rcl_hardware_read_dmi( RCL_DMI_PRODUCT_UUID );
+  gchar          *uuid_str = rcl_hardware_read_dmi( RCL_DMI_PRODUCT_UUID );
   guchar          raw[16];
   GVariantBuilder bytes;
 
@@ -1437,12 +1437,12 @@ do_get_product_uuid( GDBusMethodInvocation *invocation )
 static void
 do_get_hardware_serial( GDBusMethodInvocation *invocation )
 {
-  gchar *prod_s  = rcl_hardware_rcl_hardware_read_dmi( RCL_DMI_PRODUCT_SERIAL );
-  gchar *board_s = rcl_hardware_rcl_hardware_read_dmi( RCL_DMI_BOARD_SERIAL );
-  gchar *chas_s  = rcl_hardware_rcl_hardware_read_dmi( RCL_DMI_CHASSIS_SERIAL );
+  gchar *prod_s  = rcl_hardware_read_dmi( RCL_DMI_PRODUCT_SERIAL );
+  gchar *board_s = rcl_hardware_read_dmi( RCL_DMI_BOARD_SERIAL );
+  gchar *chas_s  = rcl_hardware_read_dmi( RCL_DMI_CHASSIS_SERIAL );
   /* Retail boards commonly leave "Default string" / "System Serial Number"
      in some of these; use the first one that holds a real value. */
-  gchar *serial  = rcl_hardware_rcl_hardware_first_usable_dup( prod_s, board_s, chas_s );
+  gchar *serial  = rcl_hardware_first_usable_dup( prod_s, board_s, chas_s );
 
   g_free( prod_s ); g_free( board_s ); g_free( chas_s );
 
@@ -1450,9 +1450,9 @@ do_get_hardware_serial( GDBusMethodInvocation *invocation )
      device-tree serial-number property. */
   if( serial[0] == '\0' )
   {
-    gchar *dt_s = rcl_hardware_rcl_hardware_read_dt_string( RCL_DT_SERIAL );
+    gchar *dt_s = rcl_hardware_read_dt_string( RCL_DT_SERIAL );
     g_free( serial );
-    serial = rcl_hardware_rcl_hardware_first_usable_dup( dt_s, NULL, NULL );
+    serial = rcl_hardware_first_usable_dup( dt_s, NULL, NULL );
     g_free( dt_s );
   }
   g_dbus_method_invocation_return_value( invocation,
