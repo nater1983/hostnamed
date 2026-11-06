@@ -1470,22 +1470,6 @@ handle_get_property( GDBusConnection  *connection,
   return NULL;
 }
 
-/* Properties are read-only via D-Bus; all changes go through Set* methods. */
-static gboolean
-handle_set_property( GDBusConnection  *connection,
-                     const gchar      *sender,
-                     const gchar      *object_path,
-                     const gchar      *interface_name,
-                     const gchar      *property_name,
-                     GVariant         *value,
-                     GError          **error,
-                     gpointer          user_data )
-{
-  g_set_error( error, G_DBUS_ERROR, G_DBUS_ERROR_PROPERTY_READ_ONLY,
-               "Property '%s' is read-only; use the Set* methods", property_name );
-  return FALSE;
-}
-
 /* --------------------------------------------------------------------------
    D-Bus method handler
    -------------------------------------------------------------------------- */
@@ -1684,7 +1668,7 @@ handle_method_call( GDBusConnection       *connection,
 static const GDBusInterfaceVTable interface_vtable = {
   handle_method_call,
   handle_get_property,
-  handle_set_property,
+  rcl_dbus_handle_set_property,
 };
 
 /* --------------------------------------------------------------------------
