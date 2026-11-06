@@ -658,7 +658,7 @@ rcl_daemon_sync_dbus_properties_internal( RclHostnameDaemon *daemon,
     gchar *icon_val    = read_key_value_file( RCL_MACHINE_INFO_FILE, "ICON_NAME" );
 
     if( (chassis_val == NULL || chassis_val[0] == '\0') &&
-        (refresh_hardware || priv->chassis == NULL) )
+        refresh_hardware )
     {
       gchar *dmi_chassis_type = read_dmi( RCL_DMI_CHASSIS_TYPE );
       chassis_num = (guint) g_ascii_strtoull( dmi_chassis_type, NULL, 10 );
