@@ -155,14 +155,6 @@ void rcl_daemon_sync_config_properties ( RclHostnameDaemon *daemon );
 
 G_END_DECLS
 
-/* Internal hostname operations invoked by the D-Bus adapter. */
-GVariant *rcl_hostname_get_property_value (const gchar *property_name,
-                                           GError **error, gpointer daemon);
-void rcl_hostname_dispatch_method (GDBusConnection *connection,
-  const gchar *sender, const gchar *object_path, const gchar *interface_name,
-  RclHostnameMethod method, GVariant *parameters,
-  GDBusMethodInvocation *invocation, gpointer daemon);
-
 /* Resolved method identifiers passed from the D-Bus routing layer. */
 typedef enum {
   RCL_METHOD_UNKNOWN = 0,
@@ -180,3 +172,13 @@ typedef enum {
   RCL_METHOD_GET_MACHINE_INFO, /* GetMachineInfo */
   RCL_METHOD_DESCRIBE, /* Describe */
 } RclHostnameMethod;
+
+/* Internal hostname operations invoked by the D-Bus adapter. */
+GVariant *rcl_hostname_get_property_value (const gchar *property_name,
+                                           GError **error, gpointer daemon);
+void rcl_hostname_dispatch_method (GDBusConnection *connection,
+  const gchar *sender, const gchar *object_path, const gchar *interface_name,
+  RclHostnameMethod method, GVariant *parameters,
+  GDBusMethodInvocation *invocation, gpointer daemon);
+
+
