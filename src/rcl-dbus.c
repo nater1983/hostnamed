@@ -107,3 +107,20 @@ rcl_dbus_register (GDBusConnection *connection, GDBusNodeInfo *introspection,
   return g_dbus_connection_register_object (connection,
     "/org/freedesktop/hostname1", iface, vtable, user_data, NULL, error);
 }
+
+/* Properties are read-only via D-Bus; all changes go through Set* methods. */
+gboolean
+rcl_dbus_handle_set_property( GDBusConnection  *connection,
+                     const gchar      *sender,
+                     const gchar      *object_path,
+                     const gchar      *interface_name,
+                     const gchar      *property_name,
+                     GVariant         *value,
+                     GError          **error,
+                     gpointer          user_data )
+{
+  g_set_error( error, G_DBUS_ERROR, G_DBUS_ERROR_PROPERTY_READ_ONLY,
+               "Property '%s' is read-only; use the Set* methods", property_name );
+  return FALSE;
+}
+
