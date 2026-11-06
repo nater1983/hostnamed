@@ -236,3 +236,53 @@ rcl_hardware_parse_firmware_date_usec(const gchar *date_str)
   return (guint64) t * G_USEC_PER_SEC;
 }
 
+
+RclHardwareSnapshot *
+rcl_hardware_snapshot_new (void)
+{
+  RclHardwareSnapshot *s = g_new0 (RclHardwareSnapshot, 1);
+  gchar *a, *b, *dt;
+  a = rcl_hardware_read_dmi (RCL_DMI_CHASSIS_TYPE);
+  s->chassis = g_strdup (rcl_hardware_chassis_type_to_string ((guint) g_ascii_strtoull (a, NULL, 10)));
+  g_free (a);
+  if (!*s->chassis) {
+    dt = rcl_hardware_read_dt_string (RCL_DT_CHASSIS_TYPE);
+    if (rcl_hardware_chassis_is_known (dt)) {
+      g_free (s->chassis);
+      s->chassis = dt;
+    } else g_free (dt);
+  }
+  a = rcl_hardware_read_dmi (RCL_DMI_SYS_VENDOR);
+  b = rcl_hardware_read_dmi (RCL_DMI_BOARD_VENDOR);
+  s->vendor = rcl_hardware_first_usable_dup (a, b, NULL);
+  g_free (a); g_free (b);
+  a = rcl_hardware_read_dmi (RCL_DMI_PRODUCT_NAME);
+  b = rcl_hardware_read_dmi (RCL_DMI_BOARD_NAME);
+  dt = rcl_hardware_read_dt_string (RCL_DT_MODEL);
+  s->model = rcl_hardware_first_usable_dup (a, b, dt);
+  g_free (a); g_free (b); g_free (dt);
+  s->sku = rcl_hardware_read_dmi ("/sys/class/dmi/id/product_sku");
+  s->version = rcl_hardware_read_dmi ("/sys/class/dmi/id/product_version");
+  a = rcl_hardware_read_dmi ("/sys/class/dmi/id/bios_vendor");
+  b = rcl_hardware_read_dmi (RCL_DMI_CHASSIS_VENDOR);
+  s->firmware_vendor = rcl_hardware_first_usable_dup (a, b, NULL);
+  g_free (a); g_free (b);
+  s->chassis_asset_tag = rcl_hardware_read_dmi ("/sys/class/dmi/id/chassis_asset_tag");
+  a = rcl_hardware_read_dmi (RCL_DMI_BIOS_VERSION);
+  s->firmware_version = rcl_hardware_first_usable_dup (a, NULL, NULL);
+  g_free (a);
+  a = rcl_hardware_read_dmi (RCL_DMI_BIOS_DATE);
+  s->firmware_date_usec = rcl_hardware_parse_firmware_date_usec (a);
+  g_free (a);
+  return s;
+}
+
+void
+rcl_hardware_snapshot_free (RclHardwareSnapshot *s)
+{
+  if (!s) return;
+  g_free (s->chassis); g_free (s->vendor); g_free (s->model);
+  g_free (s->sku); g_free (s->version);
+  g_free (s->firmware_version); g_free (s->firmware_vendor);
+  g_free (s->chassis_asset_tag); g_free (s);
+}
