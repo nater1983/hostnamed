@@ -3,6 +3,7 @@ hostnamed_sources = files(
   'rcl-hostname.c',
   'rcl-hardware.c',
   'rcl-polkit.c',
+  'rcl-dbus.c',
 )
 
 hostnamed_deps = [
