@@ -40,6 +40,7 @@
 #include <polkit/polkit.h>
 
 #include "rcl-hostname.h"
+#include "rcl-hardware.h"
 
 /* --------------------------------------------------------------------------
    The org.freedesktop.hostname1 introspection XML.
@@ -202,85 +203,6 @@ static void rcl_daemon_class_init( RclDaemonClass *klass ) {}
 static void rcl_daemon_init( RclDaemon *self ) {}
 
 /* --------------------------------------------------------------------------
-   Chassis helpers
-   -------------------------------------------------------------------------- */
-
-/*
- * Chassis handling.  One table drives everything: the SMBIOS chassis type
- * (SMBIOS spec 3.x, Table 17) maps to a Chassis string, and the Chassis
- * string maps to an icon name.  Keep this in sync with the case statements
- * in slack/hostnamectl.
- */
-const gchar *
-rcl_chassis_type_to_string( guint t )
-{
-  switch( t )
-  {
-    case  3: /* Desktop            */
-    case  4: /* Low Profile Desktop*/
-    case  5: /* Pizza Box          */
-    case  6: /* Mini Tower         */
-    case  7: /* Tower              */
-    case 13: /* All In One         */
-    case 15: /* Space-saving       */
-    case 16: /* Lunch Box          */
-    case 24: /* Sealed-case PC     */
-    case 35: /* Mini PC            */
-    case 36: /* Stick PC           */ return "desktop";
-    case  8: /* Portable           */
-    case  9: /* Laptop             */
-    case 10: /* Notebook           */
-    case 14: /* Sub Notebook       */ return "laptop";
-    case 11: /* Hand Held          */ return "handset";
-    case 17: /* Main Server        */
-    case 23: /* Rack Mount Server  */
-    case 25: /* Multi-system       */
-    case 28: /* Blade              */
-    case 29: /* Blade Enclosure    */ return "server";
-    case 30: /* Tablet             */
-    case 32: /* Detachable         */ return "tablet";
-    case 31: /* Convertible        */ return "convertible";
-    case 33: /* IoT Gateway        */
-    case 34: /* Embedded PC        */ return "embedded";
-    default:                         return "";
-  }
-}
-
-gboolean
-rcl_chassis_is_known( const gchar *c )
-{
-  static const gchar *const known[] =
-    { "desktop", "laptop", "convertible", "server", "tablet", "handset",
-      "watch", "embedded", NULL };
-  guint i;
-
-  for( i = 0; c && known[i]; i++ )
-    if( g_strcmp0( c, known[i] ) == 0 )
-      return TRUE;
-  return FALSE;
-}
-
-const gchar *
-rcl_chassis_to_icon_name( const gchar *c )
-{
-  if( !c )                                return "computer";
-  if( g_strcmp0( c, "desktop"     ) == 0 ) return "computer-desktop";
-  if( g_strcmp0( c, "laptop"      ) == 0 ) return "computer-laptop";
-  if( g_strcmp0( c, "convertible" ) == 0 ) return "computer-laptop";
-  if( g_strcmp0( c, "server"      ) == 0 ) return "computer-server";
-  if( g_strcmp0( c, "tablet"      ) == 0 ) return "computer-tablet";
-  if( g_strcmp0( c, "handset"     ) == 0 ) return "phone";
-  if( g_strcmp0( c, "watch"       ) == 0 ) return "watch";
-  return "computer";
-}
-
-const gchar *
-rcl_chassis_type_to_icon_name( guint t )
-{
-  return rcl_chassis_to_icon_name( rcl_chassis_type_to_string( t ) );
-}
-
-/* --------------------------------------------------------------------------
    Small file-reading helpers
    -------------------------------------------------------------------------- */
 
@@ -440,129 +362,6 @@ read_key_value_file (const gchar *path, const gchar *key)
   return result;
 }
 
-/* Read a DMI sysfs file, stripping whitespace. Returns "" on error so
-   callers never get NULL for DMI fields. */
-static gchar *
-read_dmi( const gchar *path )
-{
-  gchar *val = read_first_line( path );
-  return val ? val : g_strdup( "" );
-}
-
-/* Firmware routinely leaves unfilled template strings in the DMI identity
-   fields (very common on retail desktop boards, e.g. ASUS reports
-   sys_vendor "System manufacturer" and product_name "System Product Name"
-   while the real names live in board_vendor / board_name).  Treat those,
-   and empty values, as "not set" so the next source is used. */
-static gboolean
-rcl_dmi_is_placeholder( const gchar *v )
-{
-  static const gchar *const junk[] = {
-    "System manufacturer", "System Product Name", "System Version",
-    "To Be Filled By O.E.M.", "To be filled by O.E.M.", "Default string",
-    "Not Applicable", "Not Specified", "N/A", "None", "Unknown", "Undefined",
-    "O.E.M.", "OEM", "Type1ProductConfigId", "All Series",
-    "System Serial Number", "Chassis Serial Number", "Base Board Serial Number",
-    "Serial Number", NULL
-  };
-  gchar   *t;
-  gboolean bad = FALSE;
-  guint    i;
-
-  if( !v )
-    return TRUE;
-  t = g_strstrip( g_strdup( v ) );
-  if( t[0] == '\0' )
-    bad = TRUE;
-
-  /* Exact known placeholders plus common firmware-template patterns. */
-  for( i = 0; !bad && junk[i]; i++ )
-    if( g_ascii_strcasecmp( t, junk[i] ) == 0 )
-      bad = TRUE;
-
-  if( !bad )
-  {
-    gchar *lower = g_ascii_strdown( t, -1 );
-
-    if( strstr( lower, "fill" ) ||
-        strstr( lower, "default" ) ||
-        strstr( lower, "system manufacturer" ) ||
-        strstr( lower, "system product name" ) ||
-        strstr( lower, "not specified" ) ||
-        strstr( lower, "not applicable" ) ||
-        strstr( lower, "not set" ) ||
-        strstr( lower, "not defined" ) ||
-        strstr( lower, "unspecified" ) ||
-        strstr( lower, "placeholder" ) ||
-        strstr( lower, "unknown" ) ||
-        strstr( lower, "undefined" ) ||
-        strstr( lower, "invalid" ) ||
-        strstr( lower, "o.e.m." ) ||
-        strstr( lower, "type1productconfigid" ) ||
-        strstr( lower, "productconfigid" ) ||
-        strstr( lower, "serial number" ) ||
-        g_str_has_prefix( lower, "oem" ) ||
-        ( lower[0] == '<' && lower[strlen(lower) - 1] == '>' ) )
-      bad = TRUE;
-
-    g_free( lower );
-  }
-
-  g_free( t );
-  return bad;
-}
-
-/* First usable (non-empty, non-placeholder) of the given strings, as a
-   newly-allocated string; "" if none is usable. */
-static gchar *
-first_usable_dup( const gchar *a, const gchar *b, const gchar *c )
-{
-  if( !rcl_dmi_is_placeholder( a ) ) return g_strstrip( g_strdup( a ) );
-  if( !rcl_dmi_is_placeholder( b ) ) return g_strstrip( g_strdup( b ) );
-  if( !rcl_dmi_is_placeholder( c ) ) return g_strstrip( g_strdup( c ) );
-  return g_strdup( "" );
-}
-
-/* Device-tree string property (NUL-terminated); "" when absent. */
-static gchar *
-read_dt_string( const gchar *path )
-{
-  gchar *v = read_first_line( path );
-  return v ? v : g_strdup( "" );
-}
-
-/* --------------------------------------------------------------------------
-   FirmwareDate parser
-
-   /sys/class/dmi/id/bios_date contains MM/DD/YYYY.  The D-Bus property is
-   spec'd as type 't' (uint64 µs since the Unix epoch, UTC).  Return
-   G_MAXUINT64 when the date is absent or unparseable.
-   -------------------------------------------------------------------------- */
-static guint64
-parse_firmware_date_usec (const gchar *date_str)
-{
-  int month = 0, day = 0, year = 0;
-  struct tm tm;
-  time_t t;
-
-  if (!date_str || date_str[0] == '\0')
-    return G_MAXUINT64;
-
-  if (sscanf (date_str, "%d/%d/%d", &month, &day, &year) != 3)
-    return G_MAXUINT64;
-
-  memset (&tm, 0, sizeof (tm));
-  tm.tm_year = year - 1900;
-  tm.tm_mon  = month - 1;
-  tm.tm_mday = day;
-
-  t = timegm (&tm);          /* GNU extension; interprets tm as UTC */
-  if (t == (time_t) -1)
-    return G_MAXUINT64;
-
-  return (guint64) t * G_USEC_PER_SEC;
-}
-
 static gboolean rcl_hostname_is_valid( const gchar *name );
 
 /* --------------------------------------------------------------------------
@@ -660,18 +459,18 @@ rcl_daemon_sync_dbus_properties_internal( RclHostnameDaemon *daemon,
 
     if (refresh_hardware)
     {
-      gchar *dmi_chassis_type = read_dmi (RCL_DMI_CHASSIS_TYPE);
+      gchar *dmi_chassis_type = rcl_hardware_rcl_hardware_read_dmi(RCL_DMI_CHASSIS_TYPE);
       chassis_num = (guint) g_ascii_strtoull (dmi_chassis_type, NULL, 10);
       g_free (dmi_chassis_type);
 
       g_free (priv->hardware_chassis);
       priv->hardware_chassis =
-        g_strdup (rcl_chassis_type_to_string (chassis_num));
+        g_strdup (rcl_hardware_chassis_type_to_string(chassis_num));
 
       if (priv->hardware_chassis[0] == '\0')
       {
-        gchar *dt = read_dt_string (RCL_DT_CHASSIS_TYPE);
-        if (rcl_chassis_is_known (dt))
+        gchar *dt = rcl_hardware_rcl_hardware_read_dt_string(RCL_DT_CHASSIS_TYPE);
+        if (rcl_hardware_chassis_is_known(dt))
         {
           g_free (priv->hardware_chassis);
           priv->hardware_chassis = dt;
@@ -691,7 +490,7 @@ rcl_daemon_sync_dbus_properties_internal( RclHostnameDaemon *daemon,
     if( icon_val == NULL || icon_val[0] == '\0' )
     {
       g_free( icon_val );
-      icon_val = g_strdup( rcl_chassis_to_icon_name( chassis_val ) );
+      icon_val = g_strdup( rcl_hardware_chassis_to_icon_name( chassis_val ) );
     }
 
     UPDATE_STR_PROP( chassis,   chassis_val, "Chassis" );
@@ -761,14 +560,14 @@ rcl_daemon_sync_dbus_properties_internal( RclHostnameDaemon *daemon,
 
   if (refresh_hardware)
   {
-    gchar *sku=read_dmi("/sys/class/dmi/id/product_sku");
-    gchar *version=read_dmi("/sys/class/dmi/id/product_version");
-    gchar *bios_vendor=read_dmi("/sys/class/dmi/id/bios_vendor");
-    gchar *chassis_vendor=read_dmi(RCL_DMI_CHASSIS_VENDOR);
-    gchar *asset_tag=read_dmi("/sys/class/dmi/id/chassis_asset_tag");
+    gchar *sku=rcl_hardware_rcl_hardware_read_dmi("/sys/class/dmi/id/product_sku");
+    gchar *version=rcl_hardware_rcl_hardware_read_dmi("/sys/class/dmi/id/product_version");
+    gchar *bios_vendor=rcl_hardware_rcl_hardware_read_dmi("/sys/class/dmi/id/bios_vendor");
+    gchar *chassis_vendor=rcl_hardware_rcl_hardware_read_dmi(RCL_DMI_CHASSIS_VENDOR);
+    gchar *asset_tag=rcl_hardware_rcl_hardware_read_dmi("/sys/class/dmi/id/chassis_asset_tag");
     UPDATE_STR_PROP(hw_sku, sku, "HardwareSKU");
     UPDATE_STR_PROP(hw_version, version, "HardwareVersion");
-    UPDATE_STR_PROP(firmware_vendor, first_usable_dup(bios_vendor, chassis_vendor, ""), "FirmwareVendor");
+    UPDATE_STR_PROP(firmware_vendor, rcl_hardware_rcl_hardware_first_usable_dup(bios_vendor, chassis_vendor, ""), "FirmwareVendor");
     UPDATE_STR_PROP(chassis_asset_tag, asset_tag, "ChassisAssetTag");
     g_free(bios_vendor); g_free(chassis_vendor);
   }
@@ -837,26 +636,26 @@ rcl_daemon_sync_dbus_properties_internal( RclHostnameDaemon *daemon,
    */
   if (refresh_hardware)
   {
-    gchar *sys_v   = read_dmi( RCL_DMI_SYS_VENDOR );
-    gchar *board_v = read_dmi( RCL_DMI_BOARD_VENDOR );
-    gchar *prod    = read_dmi( RCL_DMI_PRODUCT_NAME );
-    gchar *board_n = read_dmi( RCL_DMI_BOARD_NAME );
-    gchar *dt_m    = read_dt_string( RCL_DT_MODEL );
+    gchar *sys_v   = rcl_hardware_rcl_hardware_read_dmi( RCL_DMI_SYS_VENDOR );
+    gchar *board_v = rcl_hardware_rcl_hardware_read_dmi( RCL_DMI_BOARD_VENDOR );
+    gchar *prod    = rcl_hardware_rcl_hardware_read_dmi( RCL_DMI_PRODUCT_NAME );
+    gchar *board_n = rcl_hardware_rcl_hardware_read_dmi( RCL_DMI_BOARD_NAME );
+    gchar *dt_m    = rcl_hardware_rcl_hardware_read_dt_string( RCL_DT_MODEL );
 
-    UPDATE_STR_PROP( hw_vendor, first_usable_dup( sys_v, board_v, "" ), "HardwareVendor" );
-    UPDATE_STR_PROP( hw_model,  first_usable_dup( prod, board_n, dt_m ), "HardwareModel" );
+    UPDATE_STR_PROP( hw_vendor, rcl_hardware_rcl_hardware_first_usable_dup( sys_v, board_v, "" ), "HardwareVendor" );
+    UPDATE_STR_PROP( hw_model,  rcl_hardware_rcl_hardware_first_usable_dup( prod, board_n, dt_m ), "HardwareModel" );
 
     g_free( sys_v ); g_free( board_v );
     g_free( prod );  g_free( board_n ); g_free( dt_m );
 
-    gchar *bios = read_dmi (RCL_DMI_BIOS_VERSION);
-    gchar *usable = first_usable_dup (bios, NULL, NULL);
+    gchar *bios = rcl_hardware_rcl_hardware_read_dmi(RCL_DMI_BIOS_VERSION);
+    gchar *usable = rcl_hardware_rcl_hardware_first_usable_dup(bios, NULL, NULL);
     UPDATE_STR_PROP (firmware_version, usable, "FirmwareVersion");
     g_free (bios);
 
     /* FirmwareDate is type 't' (uint64 µs since epoch) per the spec. */
-    gchar *date_str = read_dmi (RCL_DMI_BIOS_DATE);
-    guint64 new_usec = parse_firmware_date_usec (date_str);
+    gchar *date_str = rcl_hardware_rcl_hardware_read_dmi(RCL_DMI_BIOS_DATE);
+    guint64 new_usec = rcl_hardware_rcl_hardware_parse_firmware_date_usec(date_str);
     g_free (date_str);
 
     if (priv->firmware_date_usec != new_usec)
@@ -1614,7 +1413,7 @@ parse_uuid_bytes( const gchar *str, guchar out[16] )
 static void
 do_get_product_uuid( GDBusMethodInvocation *invocation )
 {
-  gchar          *uuid_str = read_dmi( RCL_DMI_PRODUCT_UUID );
+  gchar          *uuid_str = rcl_hardware_rcl_hardware_read_dmi( RCL_DMI_PRODUCT_UUID );
   guchar          raw[16];
   GVariantBuilder bytes;
 
@@ -1638,12 +1437,12 @@ do_get_product_uuid( GDBusMethodInvocation *invocation )
 static void
 do_get_hardware_serial( GDBusMethodInvocation *invocation )
 {
-  gchar *prod_s  = read_dmi( RCL_DMI_PRODUCT_SERIAL );
-  gchar *board_s = read_dmi( RCL_DMI_BOARD_SERIAL );
-  gchar *chas_s  = read_dmi( RCL_DMI_CHASSIS_SERIAL );
+  gchar *prod_s  = rcl_hardware_rcl_hardware_read_dmi( RCL_DMI_PRODUCT_SERIAL );
+  gchar *board_s = rcl_hardware_rcl_hardware_read_dmi( RCL_DMI_BOARD_SERIAL );
+  gchar *chas_s  = rcl_hardware_rcl_hardware_read_dmi( RCL_DMI_CHASSIS_SERIAL );
   /* Retail boards commonly leave "Default string" / "System Serial Number"
      in some of these; use the first one that holds a real value. */
-  gchar *serial  = first_usable_dup( prod_s, board_s, chas_s );
+  gchar *serial  = rcl_hardware_rcl_hardware_first_usable_dup( prod_s, board_s, chas_s );
 
   g_free( prod_s ); g_free( board_s ); g_free( chas_s );
 
@@ -1651,9 +1450,9 @@ do_get_hardware_serial( GDBusMethodInvocation *invocation )
      device-tree serial-number property. */
   if( serial[0] == '\0' )
   {
-    gchar *dt_s = read_dt_string( RCL_DT_SERIAL );
+    gchar *dt_s = rcl_hardware_rcl_hardware_read_dt_string( RCL_DT_SERIAL );
     g_free( serial );
-    serial = first_usable_dup( dt_s, NULL, NULL );
+    serial = rcl_hardware_rcl_hardware_first_usable_dup( dt_s, NULL, NULL );
     g_free( dt_s );
   }
   g_dbus_method_invocation_return_value( invocation,
