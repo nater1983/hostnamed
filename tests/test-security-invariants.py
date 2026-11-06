@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 
 source = Path(sys.argv[1]).read_text(encoding="utf-8")
+config_source = (Path(sys.argv[1]).parent / "rcl-config.c").read_text(encoding="utf-8")
 dbus_source = (Path(sys.argv[1]).parent / "rcl-dbus.c").read_text(encoding="utf-8")
 hostnamectl = Path(sys.argv[2]).read_text(encoding="utf-8")
 interface_xml = Path(sys.argv[3]).read_text(encoding="utf-8")
@@ -16,9 +17,9 @@ def require(condition, message):
 
 # Atomic privileged writes: root ownership, no symlink traversal, safe mode,
 # explicit 0644 for machine-info, complete writes and durability reporting.
-atomic_start = source.index("atomic_replace_file_mode (const gchar *path")
-atomic_end = source.index("/* Preserve the historical call shape", atomic_start)
-atomic = source[atomic_start:atomic_end]
+atomic_start = config_source.index("atomic_replace_file_mode (const gchar *path")
+atomic_end = config_source.index("/* Preserve the historical call shape", atomic_start)
+atomic = config_source[atomic_start:atomic_end]
 for fragment, message in [
     ("g_lstat (path, &st)", "replacement must lstat the destination"),
     ("!S_ISREG (st.st_mode)", "replacement must reject non-regular destinations"),
@@ -34,9 +35,9 @@ for fragment, message in [
 
 # Machine-info writes are serialized and always enforce 0644. Lock creation
 # rejects symlinks and untrusted owners; unrelated keys survive updates.
-lock_start = source.index("lock_machine_info_file (GError **error)")
-lock_end = source.index("static gboolean\nwrite_machine_info_key", lock_start)
-lock_fn = source[lock_start:lock_end]
+lock_start = config_source.index("lock_machine_info_file (GError **error)")
+lock_end = config_source.index("static gboolean\nwrite_machine_info_key", lock_start)
+lock_fn = config_source[lock_start:lock_end]
 for fragment, message in [
     ("O_NOFOLLOW", "machine-info lock must not follow symlinks"),
     ("flock (fd, LOCK_EX)", "machine-info writes must be serialized"),
@@ -45,9 +46,9 @@ for fragment, message in [
 ]:
     require(fragment in lock_fn, message)
 
-writer_start = source.index("static gboolean\nwrite_machine_info_key")
-writer_end = source.index("/* --------------------------------------------------------------------------\n   Input validation", writer_start)
-writer = source[writer_start:writer_end]
+writer_start = config_source.index("gboolean\nwrite_machine_info_key")
+writer_end = config_source.index("static gboolean\nrcl_machine_info_value_is_safe", writer_start)
+writer = config_source[writer_start:writer_end]
 require(writer.index("lock_machine_info_file (error)") <
         writer.index("g_file_get_contents (RCL_MACHINE_INFO_FILE"),
         "machine-info must be locked before reading")
