@@ -6,6 +6,7 @@ import sys
 root = Path(sys.argv[1])
 source = (root / "src/rcl-hostname.c").read_text(encoding="utf-8")
 hardware_source = (root / "src/rcl-hardware.c").read_text(encoding="utf-8")
+polkit_source = (root / "src/rcl-polkit.c").read_text(encoding="utf-8")
 main_source = (root / "src/main.c").read_text(encoding="utf-8")
 meson = (root / "data/meson.build").read_text(encoding="utf-8")
 top_meson = (root / "meson.build").read_text(encoding="utf-8")
@@ -26,9 +27,10 @@ for fragment, message in [
     ("POLKIT_CHECK_AUTHORIZATION_FLAGS_ALLOW_USER_INTERACTION", "interactive calls must permit a polkit agent"),
     ('"org.freedesktop.DBus.Error.AccessDenied"', "denials must return AccessDenied"),
     ('"org.freedesktop.DBus.Error.InteractiveAuthorizationRequired"', "challenges must request interactive authorization"),
-    ('"org.freedesktop.DBus.Error.Failed"', "authorization and persistence failures must be reported"),
+    ('"org.freedesktop.DBus.Error.Failed"', "authorization failures must be reported"),
 ]:
-    require(fragment in source, message)
+    require(fragment in polkit_source, message)
+require("rcl_polkit_check_async" in source, "daemon must delegate authorization to the Polkit module")
 require("@PRIVILEGED_GROUP@" in rules and "subject.isInGroup" in rules,
         "polkit rules must grant configured privileged-group users access")
 require("org.freedesktop.hostname1.set-static-hostname" in rules and
