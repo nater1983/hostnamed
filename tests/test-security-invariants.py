@@ -36,7 +36,7 @@ for fragment, message in [
 # Machine-info writes are serialized and always enforce 0644. Lock creation
 # rejects symlinks and untrusted owners; unrelated keys survive updates.
 lock_start = config_source.index("lock_machine_info_file (GError **error)")
-lock_end = config_source.index("static gboolean\nwrite_machine_info_key", lock_start)
+lock_end = config_source.index("gboolean\nwrite_machine_info_key", lock_start)
 lock_fn = config_source[lock_start:lock_end]
 for fragment, message in [
     ("O_NOFOLLOW", "machine-info lock must not follow symlinks"),
