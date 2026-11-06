@@ -3,15 +3,17 @@
 from pathlib import Path
 import sys
 
-source = Path(sys.argv[1]).read_text(encoding="utf-8")
+source_path = Path(sys.argv[1])
+source = source_path.read_text(encoding="utf-8")
+hardware_source = (source_path.parent / "rcl-hardware.c").read_text(encoding="utf-8")
 
 def require(condition, message):
     if not condition:
         raise AssertionError(message)
 
-placeholder_start = source.index("rcl_dmi_is_placeholder( const gchar *v )")
-placeholder_end = source.index("/* First usable (non-empty, non-placeholder)", placeholder_start)
-placeholder = source[placeholder_start:placeholder_end]
+placeholder_start = hardware_source.index("rcl_dmi_is_placeholder( const gchar *v )")
+placeholder_end = hardware_source.index("/* First usable (non-empty, non-placeholder)", placeholder_start)
+placeholder = hardware_source[placeholder_start:placeholder_end]
 for pattern in (
     '"fill"', '"default"', '"system manufacturer"',
     '"system product name"', '"not specified"', '"not applicable"',
@@ -20,13 +22,15 @@ for pattern in (
 ):
     require(pattern in placeholder, f"placeholder pattern missing: {pattern}")
 
-hardware_start = source.index('/* ---- DMI hardware info ---- */')
-hardware_end = source.index('/* ----', hardware_start + 10)
-hardware = source[hardware_start:hardware_end]
-require('first_usable_dup( sys_v, board_v, "" )' in hardware,
+snapshot_start = hardware_source.index("rcl_hardware_snapshot_new (void)")
+snapshot_end = hardware_source.index("rcl_hardware_snapshot_free (", snapshot_start)
+hardware = hardware_source[snapshot_start:snapshot_end]
+require('rcl_hardware_first_usable_dup (a, b, NULL)' in hardware,
         "HardwareVendor must not expose a DT compatible prefix as a marketing name")
-require('first_usable_dup( prod, board_n, dt_m )' in hardware,
+require('rcl_hardware_first_usable_dup (a, b, dt)' in hardware,
         "HardwareModel should retain the device-tree model fallback")
+require('if (refresh_hardware)' in source and 'rcl_hardware_snapshot_new' in source,
+        "hardware discovery must be restricted to full refreshes")
 
 static_start = source.index("do_set_static_hostname (RclHostnameDaemon")
 static_end = source.index("static void\ndo_set_machine_info", static_start)
