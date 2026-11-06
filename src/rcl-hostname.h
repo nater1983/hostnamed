@@ -154,3 +154,11 @@ void rcl_daemon_sync_config_properties ( RclHostnameDaemon *daemon );
                                            "org.freedesktop.hostname1.get-hardware-serial"
 
 G_END_DECLS
+
+/* Internal hostname operations invoked by the D-Bus adapter. */
+GVariant *rcl_hostname_get_property_value (const gchar *property_name,
+                                           GError **error, gpointer daemon);
+void rcl_hostname_dispatch_method (GDBusConnection *connection,
+  const gchar *sender, const gchar *object_path, const gchar *interface_name,
+  const gchar *method_name, GVariant *parameters,
+  GDBusMethodInvocation *invocation, gpointer daemon);
