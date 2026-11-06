@@ -447,54 +447,40 @@ rcl_daemon_sync_dbus_properties_internal( RclHostnameDaemon *daemon,
     g_strfreev(new_tags); g_free(raw_tags);
   }
 
-  /* ---- chassis / icon ----
-     Chassis: machine-info, then DMI chassis type, then the device-tree
-     chassis-type property.  Icon: machine-info, else derived from the
-     effective chassis string.  Each value is computed first and passed
-     through UPDATE_STR_PROP exactly once, so an unchanged value never
-     produces a PropertiesChanged entry. */
+  /* Only explicit full refreshes perform hardware discovery. */
+  if (refresh_hardware) {
+    RclHardwareSnapshot *hw = rcl_hardware_snapshot_new ();
+    g_free (priv->hardware_chassis);
+    priv->hardware_chassis = g_strdup (hw->chassis);
+    UPDATE_STR_PROP (hw_vendor, g_strdup (hw->vendor), "HardwareVendor");
+    UPDATE_STR_PROP (hw_model, g_strdup (hw->model), "HardwareModel");
+    UPDATE_STR_PROP (hw_sku, g_strdup (hw->sku), "HardwareSKU");
+    UPDATE_STR_PROP (hw_version, g_strdup (hw->version), "HardwareVersion");
+    UPDATE_STR_PROP (firmware_version, g_strdup (hw->firmware_version), "FirmwareVersion");
+    UPDATE_STR_PROP (firmware_vendor, g_strdup (hw->firmware_vendor), "FirmwareVendor");
+    UPDATE_STR_PROP (chassis_asset_tag, g_strdup (hw->chassis_asset_tag), "ChassisAssetTag");
+    if (priv->firmware_date_usec != hw->firmware_date_usec) {
+      priv->firmware_date_usec = hw->firmware_date_usec;
+      g_variant_builder_add (&changed_props, "{sv}", "FirmwareDate", g_variant_new_uint64 (hw->firmware_date_usec));
+      any_changed = TRUE;
+    }
+    rcl_hardware_snapshot_free (hw);
+  }
+
+  /* Machine-info overrides cached hardware chassis. */
   {
-    gchar *chassis_val = read_key_value_file( RCL_MACHINE_INFO_FILE, "CHASSIS" );
-    gchar *icon_val    = read_key_value_file( RCL_MACHINE_INFO_FILE, "ICON_NAME" );
-
-    if (refresh_hardware)
-    {
-      gchar *dmi_chassis_type = rcl_hardware_read_dmi(RCL_DMI_CHASSIS_TYPE);
-      chassis_num = (guint) g_ascii_strtoull (dmi_chassis_type, NULL, 10);
-      g_free (dmi_chassis_type);
-
-      g_free (priv->hardware_chassis);
-      priv->hardware_chassis =
-        g_strdup (rcl_hardware_chassis_type_to_string(chassis_num));
-
-      if (priv->hardware_chassis[0] == '\0')
-      {
-        gchar *dt = rcl_hardware_read_dt_string(RCL_DT_CHASSIS_TYPE);
-        if (rcl_hardware_chassis_is_known(dt))
-        {
-          g_free (priv->hardware_chassis);
-          priv->hardware_chassis = dt;
-        }
-        else
-          g_free (dt);
-      }
-    }
-
-    if (chassis_val == NULL || chassis_val[0] == '\0')
-    {
+    gchar *chassis_val = read_key_value_file (RCL_MACHINE_INFO_FILE, "CHASSIS");
+    gchar *icon_val = read_key_value_file (RCL_MACHINE_INFO_FILE, "ICON_NAME");
+    if (!chassis_val || !*chassis_val) {
       g_free (chassis_val);
-      chassis_val = g_strdup (priv->hardware_chassis
-                              ? priv->hardware_chassis : "");
+      chassis_val = g_strdup (priv->hardware_chassis ? priv->hardware_chassis : "");
     }
-
-    if( icon_val == NULL || icon_val[0] == '\0' )
-    {
-      g_free( icon_val );
-      icon_val = g_strdup( rcl_hardware_chassis_to_icon_name( chassis_val ) );
+    if (!icon_val || !*icon_val) {
+      g_free (icon_val);
+      icon_val = g_strdup (rcl_hardware_chassis_to_icon_name (chassis_val));
     }
-
-    UPDATE_STR_PROP( chassis,   chassis_val, "Chassis" );
-    UPDATE_STR_PROP( icon_name, icon_val,    "IconName" );
+    UPDATE_STR_PROP (chassis, chassis_val, "Chassis");
+    UPDATE_STR_PROP (icon_name, icon_val, "IconName");
   }
 
   /* ---- DefaultHostname: os-release DEFAULT_HOSTNAME, else "localhost" ---- */
@@ -558,20 +544,6 @@ rcl_daemon_sync_dbus_properties_internal( RclHostnameDaemon *daemon,
                    read_key_value_file( RCL_OS_RELEASE_FILE, "IMAGE_VERSION" ),
                    "OperatingSystemImageVersion" );
 
-  if (refresh_hardware)
-  {
-    gchar *sku=rcl_hardware_read_dmi("/sys/class/dmi/id/product_sku");
-    gchar *version=rcl_hardware_read_dmi("/sys/class/dmi/id/product_version");
-    gchar *bios_vendor=rcl_hardware_read_dmi("/sys/class/dmi/id/bios_vendor");
-    gchar *chassis_vendor=rcl_hardware_read_dmi(RCL_DMI_CHASSIS_VENDOR);
-    gchar *asset_tag=rcl_hardware_read_dmi("/sys/class/dmi/id/chassis_asset_tag");
-    UPDATE_STR_PROP(hw_sku, sku, "HardwareSKU");
-    UPDATE_STR_PROP(hw_version, version, "HardwareVersion");
-    UPDATE_STR_PROP(firmware_vendor, rcl_hardware_first_usable_dup(bios_vendor, chassis_vendor, ""), "FirmwareVendor");
-    UPDATE_STR_PROP(chassis_asset_tag, asset_tag, "ChassisAssetTag");
-    g_free(bios_vendor); g_free(chassis_vendor);
-  }
-
   {
     gchar *support_end=read_key_value_file(RCL_OS_RELEASE_FILE,"SUPPORT_END");
     guint64 usec=G_MAXUINT64;
@@ -625,46 +597,6 @@ rcl_daemon_sync_dbus_properties_internal( RclHostnameDaemon *daemon,
     if(cidstr) { gchar *end=NULL; guint64 v=g_ascii_strtoull(cidstr,&end,10); if(end && *end=='\0' && v<=G_MAXUINT32) cid=(guint32)v; }
     g_free(cidstr);
     if(priv->vsock_cid!=cid) { priv->vsock_cid=cid; g_variant_builder_add(&changed_props,"{sv}","VSockCID",g_variant_new_uint32(cid)); any_changed=TRUE; }
-  }
-
-  /* ---- DMI hardware info ---- */
-  /*
-   * Prefer real DMI vendor names. Device-tree compatible prefixes are
-   * machine identifiers, not reliable marketing names; when DMI has no
-   * usable vendor value, leave HardwareVendor empty rather than report a
-   * misleading identifier. HardwareModel may still use device-tree model.
-   */
-  if (refresh_hardware)
-  {
-    gchar *sys_v   = rcl_hardware_read_dmi( RCL_DMI_SYS_VENDOR );
-    gchar *board_v = rcl_hardware_read_dmi( RCL_DMI_BOARD_VENDOR );
-    gchar *prod    = rcl_hardware_read_dmi( RCL_DMI_PRODUCT_NAME );
-    gchar *board_n = rcl_hardware_read_dmi( RCL_DMI_BOARD_NAME );
-    gchar *dt_m    = rcl_hardware_read_dt_string( RCL_DT_MODEL );
-
-    UPDATE_STR_PROP( hw_vendor, rcl_hardware_first_usable_dup( sys_v, board_v, "" ), "HardwareVendor" );
-    UPDATE_STR_PROP( hw_model,  rcl_hardware_first_usable_dup( prod, board_n, dt_m ), "HardwareModel" );
-
-    g_free( sys_v ); g_free( board_v );
-    g_free( prod );  g_free( board_n ); g_free( dt_m );
-
-    gchar *bios = rcl_hardware_read_dmi(RCL_DMI_BIOS_VERSION);
-    gchar *usable = rcl_hardware_first_usable_dup(bios, NULL, NULL);
-    UPDATE_STR_PROP (firmware_version, usable, "FirmwareVersion");
-    g_free (bios);
-
-    /* FirmwareDate is type 't' (uint64 µs since epoch) per the spec. */
-    gchar *date_str = rcl_hardware_read_dmi(RCL_DMI_BIOS_DATE);
-    guint64 new_usec = rcl_hardware_parse_firmware_date_usec(date_str);
-    g_free (date_str);
-
-    if (priv->firmware_date_usec != new_usec)
-    {
-      priv->firmware_date_usec = new_usec;
-      g_variant_builder_add (&changed_props, "{sv}", "FirmwareDate",
-                             g_variant_new_uint64 (new_usec));
-      any_changed = TRUE;
-    }
   }
 
 #undef UPDATE_STR_PROP
