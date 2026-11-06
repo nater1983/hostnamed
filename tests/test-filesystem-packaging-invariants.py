@@ -5,6 +5,7 @@ import sys
 
 root = Path(sys.argv[1])
 source = (root / "src/rcl-hostname.c").read_text(encoding="utf-8")
+hardware_source = (root / "src/rcl-hardware.c").read_text(encoding="utf-8")
 main_source = (root / "src/main.c").read_text(encoding="utf-8")
 meson = (root / "data/meson.build").read_text(encoding="utf-8")
 top_meson = (root / "meson.build").read_text(encoding="utf-8")
@@ -55,13 +56,15 @@ for fragment, message in [
     ("rcl_dmi_is_placeholder", "firmware placeholders must be filtered"),
     ("RCL_DMI_BOARD_VENDOR", "board vendor must be considered"),
     ("RCL_DMI_BOARD_NAME", "board model must be considered"),
-    ('first_usable_dup( sys_v, board_v, "" )', "HardwareVendor must use DMI vendor fields and remain empty when unavailable"),
-    ('first_usable_dup( prod, board_n, dt_m )', "hardware model must fall back to device-tree model"),
-    ("read_dt_string( RCL_DT_MODEL )", "hardware model must fall back to device-tree model"),
-    ("RCL_DT_SERIAL", "hardware serial must fall back to device-tree serial"),
+    ("rcl_hardware_first_usable_dup (a, b, NULL)", "HardwareVendor must use DMI vendor fields"),
+    ("rcl_hardware_first_usable_dup (a, b, dt)", "hardware model must fall back to device-tree model"),
+    ("rcl_hardware_read_dt_string (RCL_DT_MODEL)", "hardware model must read device-tree model"),
     ('"System Product Name"', "common DMI placeholders must be recognized"),
 ]:
-    require(fragment in source, message)
+    require(fragment in hardware_source, message)
+require("RCL_DT_SERIAL" in source, "hardware serial must fall back to device-tree serial")
+require("rcl_hardware_snapshot_new" in source and "if (refresh_hardware)" in source,
+        "hardware discovery must be gated and use snapshots")
 
 # hostnamectl is installed by both supported packaging paths and uses D-Bus
 # instead of writing /etc/machine-info itself.
