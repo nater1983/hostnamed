@@ -378,7 +378,6 @@ rcl_daemon_sync_dbus_properties_internal( RclHostnameDaemon *daemon,
 {
   RclHostnameDaemonPrivate *priv = daemon->priv;
   struct utsname uts;
-  guint chassis_num = 0;
   gchar *tmp;
 
   GVariantBuilder changed_props;
