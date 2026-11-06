@@ -586,7 +586,7 @@ gint main(gint argc, gchar **argv)
   osrelease_mon = rcl_monitor_config_file(state, RCL_OS_RELEASE_FILE);
 
   /*
-   * Reconcile every two seconds as a safety net for coalesced/lost monitor
+   * Reconcile configuration every 30 seconds as a safety net for coalesced/lost monitor
    * events and inotify queue pressure. The monitor remains the fast path.
    */
   state->reconcile_id = g_timeout_add_seconds(30,
@@ -604,6 +604,7 @@ gint main(gint argc, gchar **argv)
 
   g_clear_object(&hostname_mon);
   g_clear_object(&machineinfo_mon);
+  g_clear_object(&osrelease_mon);
   g_clear_object(&hostname_file);
   g_clear_object(&machineinfo_file);
 
