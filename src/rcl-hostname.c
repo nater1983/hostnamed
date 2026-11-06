@@ -1473,7 +1473,7 @@ rcl_hostname_dispatch_method( GDBusConnection       *connection,
                     const gchar           *sender,
                     const gchar           *object_path,
                     const gchar           *interface_name,
-                    const gchar           *method_name,
+                    RclHostnameMethod      method,
                     GVariant              *parameters,
                     GDBusMethodInvocation *invocation,
                     gpointer               user_data )
@@ -1483,8 +1483,8 @@ rcl_hostname_dispatch_method( GDBusConnection       *connection,
   AuthCtx                  *ctx;
 
   /* ---- transient / static hostname ---- */
-  if( g_strcmp0(method_name, "SetHostname") == 0 ||
-      g_strcmp0(method_name, "SetStaticHostname") == 0 )
+  if( method == RCL_METHOD_SET_HOSTNAME ||
+      method == RCL_METHOD_SET_STATIC_HOSTNAME )
   {
     const gchar *name;
     gboolean     interactive;
@@ -1495,7 +1495,7 @@ rcl_hostname_dispatch_method( GDBusConnection       *connection,
     ctx->invocation = g_object_ref (invocation);
     ctx->name       = g_strdup( name );
 
-    if( g_strcmp0(method_name, "SetHostname") == 0 )
+    if( method == RCL_METHOD_SET_HOSTNAME )
     {
       ctx->op = OP_SET_HOSTNAME;
       check_polkit_async( ctx, RCL_HOSTNAME_POLKIT_SET_HOSTNAME, interactive );
@@ -1512,11 +1512,11 @@ rcl_hostname_dispatch_method( GDBusConnection       *connection,
   {
     const gchar *key = NULL;
 
-    if     ( g_strcmp0(method_name, "SetPrettyHostname") == 0 ) key = "PRETTY_HOSTNAME";
-    else if( g_strcmp0(method_name, "SetIconName")       == 0 ) key = "ICON_NAME";
-    else if( g_strcmp0(method_name, "SetChassis")        == 0 ) key = "CHASSIS";
-    else if( g_strcmp0(method_name, "SetDeployment")     == 0 ) key = "DEPLOYMENT";
-    else if( g_strcmp0(method_name, "SetLocation")       == 0 ) key = "LOCATION";
+    if     ( method == RCL_METHOD_SET_PRETTY_HOSTNAME ) key = "PRETTY_HOSTNAME";
+    else if( method == RCL_METHOD_SET_ICON_NAME ) key = "ICON_NAME";
+    else if( method == RCL_METHOD_SET_CHASSIS ) key = "CHASSIS";
+    else if( method == RCL_METHOD_SET_DEPLOYMENT ) key = "DEPLOYMENT";
+    else if( method == RCL_METHOD_SET_LOCATION ) key = "LOCATION";
 
     if( key )
     {
@@ -1541,7 +1541,7 @@ rcl_hostname_dispatch_method( GDBusConnection       *connection,
   }
 
   /* ---- sensitive hardware reads ---- */
-  if( g_strcmp0(method_name, "GetHardwareSerial") == 0 )
+  if( method == RCL_METHOD_GET_HARDWARE_SERIAL )
   {
     gboolean interactive;
 
@@ -1554,7 +1554,7 @@ rcl_hostname_dispatch_method( GDBusConnection       *connection,
     check_polkit_async(ctx, RCL_HOSTNAME_POLKIT_GET_HARDWARE_SERIAL, interactive);
     return;
   }
-  if( g_strcmp0(method_name, "GetProductUUID") == 0 )
+  if( method == RCL_METHOD_GET_PRODUCT_UUID )
   {
     gboolean interactive;
     g_variant_get( parameters, "(b)", &interactive );
@@ -1563,7 +1563,7 @@ rcl_hostname_dispatch_method( GDBusConnection       *connection,
     ctx->daemon     = g_object_ref( daemon );
     ctx->invocation = g_object_ref (invocation);
 
-    if( g_strcmp0(method_name, "GetProductUUID") == 0 )
+    if( method == RCL_METHOD_GET_PRODUCT_UUID )
     {
       ctx->op = OP_GET_PRODUCT_UUID;
       check_polkit_async( ctx, RCL_HOSTNAME_POLKIT_GET_PRODUCT_UUID, interactive );
@@ -1571,18 +1571,18 @@ rcl_hostname_dispatch_method( GDBusConnection       *connection,
     return;
   }
 
-  if( g_strcmp0(method_name, "SetTags") == 0 || g_strcmp0(method_name, "AddAndRemoveTags") == 0 ) {
+  if( method == RCL_METHOD_SET_TAGS || method == RCL_METHOD_ADD_AND_REMOVE_TAGS ) {
     gboolean interactive;
 
     g_variant_get_child(parameters, g_variant_n_children(parameters) - 1,
                         "b", &interactive);
 
     ctx=g_new0(AuthCtx,1); ctx->daemon=g_object_ref(daemon); ctx->invocation=g_object_ref(invocation);
-    ctx->op = g_strcmp0(method_name,"SetTags")==0 ? OP_SET_TAGS : OP_ADD_REMOVE_TAGS;
+    ctx->op = method == RCL_METHOD_SET_TAGS ? OP_SET_TAGS : OP_ADD_REMOVE_TAGS;
     ctx->parameters=g_variant_ref(parameters);
     check_polkit_async(ctx,RCL_HOSTNAME_POLKIT_SET_MACHINE_INFO,interactive); return;
   }
-  if( g_strcmp0(method_name, "GetMachineInfo") == 0 ) {
+  if( method == RCL_METHOD_GET_MACHINE_INFO ) {
     const gchar *field; gchar *value; g_variant_get(parameters,"(&s)",&field);
     if(!field[0] || !g_regex_match_simple("^[A-Z][A-Z0-9_]*$",field,0,0)) {
       g_dbus_method_invocation_return_error(invocation,G_DBUS_ERROR,G_DBUS_ERROR_INVALID_ARGS,"Invalid machine-info field name"); return;
@@ -1592,7 +1592,7 @@ rcl_hostname_dispatch_method( GDBusConnection       *connection,
     g_dbus_method_invocation_return_value(invocation,g_variant_new("(s)",value)); g_free(value); return;
   }
 
-  if( g_strcmp0(method_name, "Describe") == 0 )
+  if( method == RCL_METHOD_DESCRIBE )
   {
     GString *js = g_string_new( "{" );
 
@@ -1652,9 +1652,8 @@ rcl_hostname_dispatch_method( GDBusConnection       *connection,
     return;
   }
 
-  g_dbus_method_invocation_return_error( invocation,
-    G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD,
-    "Unknown method '%s'", method_name );
+  g_dbus_method_invocation_return_error_literal( invocation,
+    G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "Unknown hostname1 method" );
 }
 
 /* --------------------------------------------------------------------------
