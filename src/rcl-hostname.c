@@ -1323,6 +1323,10 @@ rcl_hostname_daemon_finalize( GObject *object )
 {
   RclHostnameDaemonPrivate *priv = RCL_HOSTNAME_DAEMON(object)->priv;
 
+  /* Finalization must also release bus resources if startup failed or the
+   * caller omitted an explicit shutdown. Shutdown is safe to call twice. */
+  rcl_daemon_shutdown (RCL_DAEMON (object));
+
   g_clear_object( &priv->authority );
 
   g_free( priv->hostname );
