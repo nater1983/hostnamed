@@ -1,3 +1,5 @@
+#define _GNU_SOURCE  /* for timegm(3) */
+
 /*
  * Hardware discovery helpers for hostnamed.
  *

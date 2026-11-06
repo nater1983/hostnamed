@@ -153,9 +153,4 @@ void rcl_daemon_sync_config_properties ( RclHostnameDaemon *daemon );
 #define RCL_HOSTNAME_POLKIT_GET_HARDWARE_SERIAL \
                                            "org.freedesktop.hostname1.get-hardware-serial"
 
-/*---------------------------------------------------------------------------
-  File paths – gathered in one place so they're easy to override for tests
-  or alternative distro layouts.
- ---------------------------------------------------------------------------*/
-
 G_END_DECLS
