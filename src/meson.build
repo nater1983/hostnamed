@@ -1,6 +1,7 @@
 hostnamed_sources = files(
   'main.c',
   'rcl-hostname.c',
+  'rcl-config.c',
   'rcl-hardware.c',
   'rcl-polkit.c',
   'rcl-dbus.c',
