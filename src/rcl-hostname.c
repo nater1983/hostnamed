@@ -41,6 +41,7 @@
 
 #include "rcl-hostname.h"
 #include "rcl-hardware.h"
+#include "rcl-polkit.h"
 
 /* --------------------------------------------------------------------------
    The org.freedesktop.hostname1 introspection XML.
@@ -1461,52 +1462,11 @@ out:
   g_clear_pointer(&addv,g_variant_unref); g_clear_pointer(&removev,g_variant_unref);
 }
 
-/* ---- async authorisation callback ---- */
-
+/* Execute the requested operation only after Polkit authorizes it. */
 static void
-on_check_done( GObject *source, GAsyncResult *res, gpointer user_data )
+on_polkit_authorized (gpointer user_data)
 {
-  AuthCtx                   *ctx    = user_data;
-  PolkitAuthorizationResult *result;
-  GError                    *error  = NULL;
-
-  result = polkit_authority_check_authorization_finish(
-             POLKIT_AUTHORITY(source), res, &error );
-
-  if( !result )
-  {
-    /* Keep implementation details in the daemon log; expose a stable,
-       non-sensitive error to unprivileged D-Bus clients. */
-    g_warning ("PolKit authorization check failed: %s",
-               error ? error->message : "unknown error");
-    g_dbus_method_invocation_return_dbus_error( ctx->invocation,
-      "org.freedesktop.DBus.Error.Failed",
-      "Authorization service failed" );
-    g_clear_error( &error );
-    auth_ctx_free( ctx );
-    return;
-  }
-
-  if( !polkit_authorization_result_get_is_authorized( result ) )
-  {
-    /* is_challenge: authentication is possible but the caller passed
-       interactive=FALSE.  Tell the client to retry with interactive=TRUE
-       (so a GUI can raise an agent dialog) rather than reporting a hard
-       denial. */
-    if( polkit_authorization_result_get_is_challenge( result ) )
-      g_dbus_method_invocation_return_dbus_error( ctx->invocation,
-        "org.freedesktop.DBus.Error.InteractiveAuthorizationRequired",
-        "Authentication is required; retry interactively with a polkit authentication agent in the caller's session" );
-    else
-      g_dbus_method_invocation_return_dbus_error( ctx->invocation,
-        "org.freedesktop.DBus.Error.AccessDenied",
-        "Not authorized to perform the requested action" );
-    g_object_unref( result );
-    auth_ctx_free( ctx );
-    return;
-  }
-  g_object_unref( result );
-
+  AuthCtx *ctx = user_data;
   switch( ctx->op )
   {
     case OP_SET_HOSTNAME:
@@ -1532,49 +1492,14 @@ on_check_done( GObject *source, GAsyncResult *res, gpointer user_data )
       break;
   }
 
-  auth_ctx_free( ctx );
 }
 
-/* ---- async authorisation starter (takes ownership of ctx) ---- */
-
 static void
-check_polkit_async( AuthCtx *ctx, const gchar *action_id, gboolean interactive )
+check_polkit_async (AuthCtx *ctx, const gchar *action_id, gboolean interactive)
 {
-  RclHostnameDaemonPrivate     *priv = ctx->daemon->priv;
-  PolkitSubject                *subject;
-  PolkitCheckAuthorizationFlags flags;
-  const gchar                  *sender;
-
-  /* Acquire the authority handle lazily if the startup fetch failed.  This
-     is a fast, non-interactive call (it only connects to polkitd). */
-  if( priv->authority == NULL )
-  {
-    GError *err = NULL;
-    priv->authority = polkit_authority_get_sync( NULL, &err );
-    if( priv->authority == NULL )
-    {
-      g_warning ("Could not acquire PolKit authority: %s",
-                 err ? err->message : "unknown error");
-      g_dbus_method_invocation_return_dbus_error( ctx->invocation,
-        "org.freedesktop.DBus.Error.Failed",
-        "Authorization service unavailable" );
-      g_clear_error( &err );
-      auth_ctx_free( ctx );
-      return;
-    }
-  }
-
-  sender  = g_dbus_method_invocation_get_sender( ctx->invocation );
-  subject = polkit_system_bus_name_new( sender );
-  flags   = interactive
-              ? POLKIT_CHECK_AUTHORIZATION_FLAGS_ALLOW_USER_INTERACTION
-              : POLKIT_CHECK_AUTHORIZATION_FLAGS_NONE;
-
-  polkit_authority_check_authorization(
-    priv->authority, subject, action_id, NULL, flags,
-    NULL /* cancellable */, on_check_done, ctx );
-
-  g_object_unref( subject );
+  rcl_polkit_check_async (&ctx->daemon->priv->authority, ctx->invocation,
+                          action_id, interactive, on_polkit_authorized,
+                          (RclPolkitCleanupFunc) auth_ctx_free, ctx);
 }
 
 /* --------------------------------------------------------------------------
