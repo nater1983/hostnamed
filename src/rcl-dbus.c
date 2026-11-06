@@ -135,12 +135,51 @@ rcl_dbus_handle_get_property (GDBusConnection *connection,
   return rcl_hostname_get_property_value (property_name, error, user_data);
 }
 
+/* Resolve public method names here; the daemon only executes operations. */
+static RclHostnameMethod
+rcl_dbus_resolve_method (const gchar *method_name)
+{
+  if (g_strcmp0 (method_name, "SetHostname") == 0)
+    return RCL_METHOD_SET_HOSTNAME;
+  if (g_strcmp0 (method_name, "SetStaticHostname") == 0)
+    return RCL_METHOD_SET_STATIC_HOSTNAME;
+  if (g_strcmp0 (method_name, "SetPrettyHostname") == 0)
+    return RCL_METHOD_SET_PRETTY_HOSTNAME;
+  if (g_strcmp0 (method_name, "SetIconName") == 0)
+    return RCL_METHOD_SET_ICON_NAME;
+  if (g_strcmp0 (method_name, "SetChassis") == 0)
+    return RCL_METHOD_SET_CHASSIS;
+  if (g_strcmp0 (method_name, "SetDeployment") == 0)
+    return RCL_METHOD_SET_DEPLOYMENT;
+  if (g_strcmp0 (method_name, "SetLocation") == 0)
+    return RCL_METHOD_SET_LOCATION;
+  if (g_strcmp0 (method_name, "GetHardwareSerial") == 0)
+    return RCL_METHOD_GET_HARDWARE_SERIAL;
+  if (g_strcmp0 (method_name, "GetProductUUID") == 0)
+    return RCL_METHOD_GET_PRODUCT_UUID;
+  if (g_strcmp0 (method_name, "SetTags") == 0)
+    return RCL_METHOD_SET_TAGS;
+  if (g_strcmp0 (method_name, "AddAndRemoveTags") == 0)
+    return RCL_METHOD_ADD_AND_REMOVE_TAGS;
+  if (g_strcmp0 (method_name, "GetMachineInfo") == 0)
+    return RCL_METHOD_GET_MACHINE_INFO;
+  if (g_strcmp0 (method_name, "Describe") == 0)
+    return RCL_METHOD_DESCRIBE;
+  return RCL_METHOD_UNKNOWN;
+}
+
 void
 rcl_dbus_handle_method_call (GDBusConnection *connection,
   const gchar *sender, const gchar *object_path, const gchar *interface_name,
   const gchar *method_name, GVariant *parameters,
   GDBusMethodInvocation *invocation, gpointer user_data)
 {
+  RclHostnameMethod method = rcl_dbus_resolve_method (method_name);
+  if (method == RCL_METHOD_UNKNOWN) {
+    g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR,
+      G_DBUS_ERROR_UNKNOWN_METHOD, "Unknown method '%s'", method_name);
+    return;
+  }
   rcl_hostname_dispatch_method (connection, sender, object_path, interface_name,
-                                method_name, parameters, invocation, user_data);
+                                method, parameters, invocation, user_data);
 }
