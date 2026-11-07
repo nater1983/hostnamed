@@ -66,4 +66,22 @@ require("rcl_daemon_shutdown (RCL_DAEMON (object));" in finalizer,
 require("g_clear_object( &priv->authority )" not in finalizer,
         "finalizer must not duplicate shutdown-owned Polkit cleanup")
 
+
+# An asynchronous Polkit reply must not authorize a request from a previous
+# D-Bus connection after the daemon has shut down or reconnected.
+authorized_start = daemon_source.index("on_polkit_authorized (gpointer user_data)")
+authorized_end = daemon_source.index("\n}\n", authorized_start) + 3
+authorized = daemon_source[authorized_start:authorized_end]
+for fragment in (
+    "priv->registration_id == 0",
+    "priv->connection != g_dbus_method_invocation_get_connection (ctx->invocation)",
+    "g_dbus_connection_is_closed (priv->connection)",
+    "org.freedesktop.DBus.Error.Disconnected",
+):
+    require(fragment in authorized,
+            f"asynchronous authorization must reject stale requests: {fragment}")
+require(authorized.index("priv->registration_id == 0") <
+        authorized.index("switch( ctx->op )"),
+        "stale-request guard must precede privileged operations")
+
 print("daemon lifecycle invariants: PASS")
