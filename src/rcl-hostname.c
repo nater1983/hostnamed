@@ -1244,8 +1244,9 @@ rcl_daemon_startup( RclDaemon *daemon, GDBusConnection *connection )
   RclHostnameDaemonPrivate *priv = self->priv;
   GError *error = NULL;
 
-  /* A bus restart requires a fresh PolKit authority as well. */
-  g_clear_object( &priv->authority );
+  /* Release any prior or partially initialized bus state before acquiring
+   * new references. This also handles repeated startup after a bus restart. */
+  rcl_daemon_shutdown (daemon);
 
   priv->connection    = g_object_ref( connection );
   priv->introspection = rcl_dbus_introspection_new( &error );
@@ -1326,8 +1327,6 @@ rcl_hostname_daemon_finalize( GObject *object )
   /* Finalization must also release bus resources if startup failed or the
    * caller omitted an explicit shutdown. Shutdown is safe to call twice. */
   rcl_daemon_shutdown (RCL_DAEMON (object));
-
-  g_clear_object( &priv->authority );
 
   g_free( priv->hostname );
   g_free( priv->static_hostname );
