@@ -2,11 +2,26 @@
 
 All notable changes to `hostnamed` are documented here, newest release first.
 
-## [0.3.3] - Unreleased
+## [0.3.3] - 2026-11-07
 
 ### D-Bus interface and authorization compatibility
 - Removed incorrect immutable-property annotations from seven os-release-backed properties in both embedded and installed D-Bus introspection.
 - Aligned the installed D-Bus XML signatures for GetHardwareSerial, SetTags, and AddAndRemoveTags with the existing interactive authorization implementation.
+
+### Configuration monitoring and hardware polling
+- Added a configuration-only property refresh path so hostname, machine-info, and os-release updates do not trigger unnecessary DMI or device-tree hardware discovery.
+- Coalesced configuration-monitor events with a 100 ms refresh timer and added monitoring of the configured os-release file.
+- Reduced periodic configuration reconciliation from every two seconds to every 30 seconds while retaining file-monitor updates as the fast path.
+- Preserved full hardware refresh during daemon startup and explicitly requested full synchronization.
+
+### Lifecycle cleanup
+- Made the daemon finalizer invoke shutdown so partial startup and ordinary object destruction release D-Bus registration and cached Polkit resources safely, including after explicit shutdown.
+
+### Build hardening and diagnostics
+- Set Meson's default optimization level to 2 without prohibiting explicit unoptimized builds.
+- Enabled `_FORTIFY_SOURCE=2` only when the compiler reports that optimization is active, avoiding fortify warnings during unoptimized debug builds.
+- Added supported diagnostic flags for debug builds: `-Wcast-align`, `-Wmissing-declarations`, `-Wmissing-prototypes`, and `-Wnested-externs`.
+- Retained existing stack-protector and warning-suppression settings.
 
 ## [0.3.2] - 2026-11-02
 
