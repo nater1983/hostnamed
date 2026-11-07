@@ -60,6 +60,7 @@ struct _RclHostnameDaemonPrivate
   GDBusConnection  *connection;
   GDBusNodeInfo    *introspection;
   guint             registration_id;
+  guint64           registration_generation;
   gboolean          debug;
 
   /* Cached PolKit authority handle, fetched once at startup.  The blocking
@@ -555,6 +556,7 @@ typedef struct
   gchar                 *name;         /* owned; SET_* operand (may be NULL) */
   gchar                 *key;          /* owned; machine-info key (SET_MACHINE_INFO) */
   GVariant              *parameters;
+  guint64                registration_generation;
 } AuthCtx;
 
 static void
@@ -944,6 +946,7 @@ on_polkit_authorized (gpointer user_data)
   /* An authorization result may arrive after bus loss or a restart.
    * Never execute a privileged operation for an obsolete D-Bus request. */
   if (priv->registration_id == 0 ||
+      priv->registration_generation != ctx->registration_generation ||
       priv->connection != g_dbus_method_invocation_get_connection (ctx->invocation) ||
       g_dbus_connection_is_closed (priv->connection))
   {
@@ -983,6 +986,9 @@ on_polkit_authorized (gpointer user_data)
 static void
 check_polkit_async (AuthCtx *ctx, const gchar *action_id, gboolean interactive)
 {
+  /* Bind the request to this registration, even if a later startup reuses
+   * the same GDBusConnection and numeric registration ID. */
+  ctx->registration_generation = ctx->daemon->priv->registration_generation;
   rcl_polkit_check_async (&ctx->daemon->priv->authority, ctx->invocation,
                           action_id, interactive, on_polkit_authorized,
                           (RclPolkitCleanupFunc) auth_ctx_free, ctx);
@@ -1313,6 +1319,8 @@ rcl_daemon_shutdown( RclDaemon *daemon )
     priv->registration_id = 0;
   }
 
+  /* Invalidate every outstanding authorization from this registration. */
+  priv->registration_generation++;
   g_clear_object( &priv->connection );
   g_clear_object( &priv->authority );
 
