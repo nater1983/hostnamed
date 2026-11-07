@@ -74,12 +74,17 @@ authorized_end = daemon_source.index("\n}\n", authorized_start) + 3
 authorized = daemon_source[authorized_start:authorized_end]
 for fragment in (
     "priv->registration_id == 0",
+    "priv->registration_generation != ctx->registration_generation",
     "priv->connection != g_dbus_method_invocation_get_connection (ctx->invocation)",
     "g_dbus_connection_is_closed (priv->connection)",
     "org.freedesktop.DBus.Error.Disconnected",
 ):
     require(fragment in authorized,
             f"asynchronous authorization must reject stale requests: {fragment}")
+require("priv->registration_generation++;" in shutdown,
+        "shutdown must invalidate outstanding authorization generations")
+require("ctx->registration_generation = ctx->daemon->priv->registration_generation;" in daemon_source,
+        "Polkit requests must capture their original registration generation")
 require(authorized.index("priv->registration_id == 0") <
         authorized.index("switch( ctx->op )"),
         "stale-request guard must precede privileged operations")
