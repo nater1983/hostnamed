@@ -939,6 +939,20 @@ static void
 on_polkit_authorized (gpointer user_data)
 {
   AuthCtx *ctx = user_data;
+  RclHostnameDaemonPrivate *priv = ctx->daemon->priv;
+
+  /* An authorization result may arrive after bus loss or a restart.
+   * Never execute a privileged operation for an obsolete D-Bus request. */
+  if (priv->registration_id == 0 ||
+      priv->connection != g_dbus_method_invocation_get_connection (ctx->invocation) ||
+      g_dbus_connection_is_closed (priv->connection))
+  {
+    g_dbus_method_invocation_return_dbus_error (
+      ctx->invocation, "org.freedesktop.DBus.Error.Disconnected",
+      "D-Bus connection changed while authorization was pending");
+    return;
+  }
+
   switch( ctx->op )
   {
     case OP_SET_HOSTNAME:
