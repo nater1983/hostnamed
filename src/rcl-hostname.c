@@ -1272,8 +1272,10 @@ rcl_daemon_startup( RclDaemon *daemon, GDBusConnection *connection )
   priv->introspection = rcl_dbus_introspection_new( &error );
   if( !priv->introspection )
   {
-    g_warning( "Failed to parse introspection XML: %s", error->message );
-    g_error_free( error );
+    g_warning( "Failed to parse introspection XML: %s",
+               error ? error->message : "(unknown error)" );
+    g_clear_error( &error );
+    rcl_daemon_shutdown (daemon);
     return FALSE;
   }
 
@@ -1282,8 +1284,10 @@ rcl_daemon_startup( RclDaemon *daemon, GDBusConnection *connection )
 
   if( priv->registration_id == 0 )
   {
-    g_warning( "Could not register D-Bus object: %s", error->message );
-    g_error_free( error );
+    g_warning( "Could not register D-Bus object: %s",
+               error ? error->message : "(unknown error)" );
+    g_clear_error( &error );
+    rcl_daemon_shutdown (daemon);
     return FALSE;
   }
 
