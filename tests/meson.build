@@ -108,4 +108,14 @@ if dbus_daemon.found() and gdbus.found()
     timeout : 60,
     suite : 'integration',
   )
+  test(
+    'lifecycle-stress-private-bus',
+    python,
+    args : [
+      files('test-lifecycle-stress.py'),
+      hostnamed_exe,
+    ],
+    timeout : 120,
+    suite : 'integration',
+  )
 endif
