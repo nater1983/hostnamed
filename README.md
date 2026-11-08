@@ -90,6 +90,25 @@ and polkit configuration. In particular, verify D-Bus activation, allowed and
 denied callers, interactive authorization, file replacement by rename, changes
 made by external tools, and behavior after restarting the system bus.
 
+For a local regression run, enable tests and use both the normal and
+AddressSanitizer builds. The four private-bus integration tests cover D-Bus
+reconnection, shutdown during disconnection, name replacement, and 25 repeated
+startup/shutdown cycles. These tests do not modify the machine's system bus.
+
+```sh
+meson setup build -Dtests=true
+meson compile -C build
+meson test -C build --print-errorlogs
+
+meson setup build-asan -Dtests=true -Db_sanitize=address -Dbuildtype=debug
+meson compile -C build-asan
+ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 meson test -C build-asan --print-errorlogs
+```
+
+The ASan command disables leak detection for this test configuration; it does
+not constitute a leak-free certification. Installed-system authorization and
+activation still require separate target-system testing.
+
 ## Project layout
 
 ```
@@ -98,14 +117,19 @@ made by external tools, and behavior after restarting the system bus.
 ├── meson_options.txt     # user-settable options (-D flags)
 ├── src/
 │   ├── meson.build       # compiles the hostnamed binary
-│   ├── main.c            # GMainLoop, D-Bus name ownership, inotify watches
-│   ├── rcl-hostname.h    # public interface: types, macros, path constants
-│   └── rcl-hostname.c    # D-Bus skeleton, property sync, polkit, file I/O
+│   ├── main.c            # main loop, bus lifecycle, configuration monitoring
+│   ├── rcl-hostname.[ch] # hostname state and D-Bus property handling
+│   ├── rcl-config.[ch]   # configuration parsing and persistence
+│   ├── rcl-hardware.[ch] # cached hardware discovery and snapshot handling
+│   ├── rcl-polkit.[ch]   # asynchronous authorization
+│   └── rcl-dbus.[ch]     # D-Bus support
 ├── data/
 │   ├── meson.build                                    # installs D-Bus and polkit data files
 │   ├── org.freedesktop.hostname1.service.in           # D-Bus activation
 │   ├── org.freedesktop.hostname1.conf                 # D-Bus security policy
 │   └── org.freedesktop.hostname1.policy               # polkit actions
+├── tests/               # source invariants and private-bus integration tests
+├── man/                 # hostnamed(8) and hostnamectl(1)
 └── po/
     ├── meson.build       # gettext / i18n integration
     ├── POTFILES          # source files with translatable strings
