@@ -66,7 +66,7 @@ def dbus_owner_pid(env):
     )
     if owner.returncode != 0:
         return None
-    match = re.search(r"'(:[0-9]+\\.[0-9]+)'", owner.stdout)
+    match = re.search(r"'(:[0-9]+\.[0-9]+)'", owner.stdout)
     if not match:
         return None
     result = subprocess.run(
@@ -78,7 +78,7 @@ def dbus_owner_pid(env):
     )
     if result.returncode != 0:
         return None
-    pid_match = re.search(r"(?:uint32\\s+)?([0-9]+)", result.stdout)
+    pid_match = re.search(r"(?:uint32\s+)?([0-9]+)", result.stdout)
     return int(pid_match.group(1)) if pid_match else None
 
 
@@ -177,7 +177,7 @@ def main():
                 if daemon.poll() is not None:
                     raise AssertionError("hostnamed exited after reconnection")
                 if dbus_owner_pid(env) != pid:
-                    raise AssertionError("D-Bus name is not owned by original PID")
+                    raise AssertionError("D-Bus owner PID mismatch: expected " + str(pid) + ", got " + str(dbus_owner_pid(env)))
                 print("PASS: D-Bus owner PID matches surviving daemon", flush=True)
                 return 0
             except Exception as exc:
