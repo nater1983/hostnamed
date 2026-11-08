@@ -4,6 +4,20 @@ All notable changes to `hostnamed` are documented here, newest release first.
 
 ## [0.4.0] - Unreleased
 
+### Runtime integration and regression coverage
+- Added private system-bus integration tests for reconnection after bus restart,
+  clean SIGTERM shutdown during disconnection, and intentional D-Bus name
+  replacement via `--replace`.
+- Verified that the replaced daemon exits cleanly and that the new owner
+  retains the well-known name beyond the reconnect interval.
+- Added a 25-cycle startup/shutdown stress test verifying D-Bus ownership,
+  clean exit status, and name release between successive daemon instances.
+- Disabled GDBus automatic process exit on connection closure so the daemon
+  can handle system-bus reconnection through its own lifecycle logic.
+- Completed merged-branch regression testing on Slackware: 12/12 Meson tests
+  passed in both normal and AddressSanitizer configurations. ASan leak
+  detection was disabled for these runs.
+
 ### Configuration monitoring and refresh efficiency
 
 - Debounce configuration directory-monitor events before refreshing D-Bus properties.
