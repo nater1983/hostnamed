@@ -73,3 +73,19 @@ test(
     join_paths(meson.project_source_root(), 'src', 'rcl-hostname.c'),
   ],
 )
+
+# Runs only against a temporary private bus, never the real system bus.
+dbus_daemon = find_program('dbus-daemon', required : false)
+gdbus = find_program('gdbus', required : false)
+if dbus_daemon.found() and gdbus.found()
+  test(
+    'dbus-reconnect-private-bus',
+    python,
+    args : [
+      files('test-dbus-reconnect.py'),
+      hostnamed_exe,
+    ],
+    timeout : 75,
+    suite : 'integration',
+  )
+endif
