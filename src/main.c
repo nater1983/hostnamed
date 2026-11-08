@@ -171,6 +171,9 @@ rcl_main_bus_acquired(GDBusConnection *connection,
 
   LOG(state, "bus acquired");
 
+  /* Keep the daemon alive on bus loss so our reconnect timer can run. */
+  g_dbus_connection_set_exit_on_close(connection, FALSE);
+
   if (!rcl_daemon_startup(state->daemon, connection))
   {
     g_warning("Could not startup daemon");

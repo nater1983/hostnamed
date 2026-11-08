@@ -19,7 +19,7 @@ hostnamed_inc = [
   include_directories('.'),
 ]
 
-executable(
+hostnamed_exe = executable(
   'hostnamed',
   hostnamed_sources,
   dependencies          : hostnamed_deps,
