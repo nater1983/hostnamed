@@ -36,7 +36,7 @@ def owner_pid(env):
     if match is None:
         return None
     pid = call("GetConnectionUnixProcessID", match.group(1))
-    match = re.search(r"([0-9]+)", pid)
+    match = re.search(r"(?:uint32\s+)?([0-9]+)", pid)
     return int(match.group(1)) if match else None
 
 
