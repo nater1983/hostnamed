@@ -49,6 +49,16 @@ require(startup.index("rcl_daemon_shutdown (daemon);") <
         startup.index("priv->connection    = g_object_ref( connection );"),
         "startup must clear prior bus resources before acquiring a connection")
 
+# Both failed startup branches must discard partially acquired D-Bus state.
+for failure in ("Failed to parse introspection XML:", "Could not register D-Bus object:"):
+    failure_start = startup.index(failure)
+    failure_end = startup.index("return FALSE;", failure_start)
+    failure_path = startup[failure_start:failure_end]
+    require("rcl_daemon_shutdown (daemon);" in failure_path,
+            f"startup failure must clean up D-Bus state: {failure}")
+    require('error ? error->message : "(unknown error)"' in failure_path,
+            f"startup failure must tolerate a missing GError: {failure}")
+
 shutdown_start = daemon_source.index("rcl_daemon_shutdown( RclDaemon *daemon")
 shutdown_end = daemon_source.index("\n}\n", shutdown_start) + 3
 shutdown = daemon_source[shutdown_start:shutdown_end]
