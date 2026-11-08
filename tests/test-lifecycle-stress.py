@@ -36,7 +36,7 @@ def owner_pid(env):
     if match is None:
         return None
     pid = call("GetConnectionUnixProcessID", match.group(1))
-    match = re.search(r"(?:uint32\s+)?([0-9]+)", pid)
+    match = re.search(r"\(\s*(?:uint32\s+)?([0-9]+)\s*,?\s*\)", pid)
     return int(match.group(1)) if match else None
 
 
@@ -101,9 +101,16 @@ def main():
                         stderr=subprocess.STDOUT,
                     )
                     pid = daemon.pid
-                    wait_until(lambda: daemon.poll() is None and
-                               owner_pid(env) == pid,
-                               "ownership in cycle " + str(cycle))
+                    try:
+                        wait_until(lambda: daemon.poll() is None and
+                                   owner_pid(env) == pid,
+                                   "ownership in cycle " + str(cycle))
+                    except AssertionError as exc:
+                        raise AssertionError(
+                            str(exc) + "; expected PID=" + str(pid) +
+                            "; observed owner PID=" + str(owner_pid(env)) +
+                            "; daemon status=" + str(daemon.poll())
+                        ) from exc
                     daemon.terminate()
                     try:
                         code = daemon.wait(timeout=5)
