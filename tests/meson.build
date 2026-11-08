@@ -98,4 +98,14 @@ if dbus_daemon.found() and gdbus.found()
     timeout : 60,
     suite : 'integration',
   )
+  test(
+    'dbus-name-replacement-private-bus',
+    python,
+    args : [
+      files('test-dbus-replacement.py'),
+      hostnamed_exe,
+    ],
+    timeout : 60,
+    suite : 'integration',
+  )
 endif
