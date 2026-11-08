@@ -88,4 +88,14 @@ if dbus_daemon.found() and gdbus.found()
     timeout : 75,
     suite : 'integration',
   )
+  test(
+    'dbus-shutdown-private-bus',
+    python,
+    args : [
+      files('test-dbus-shutdown.py'),
+      hostnamed_exe,
+    ],
+    timeout : 60,
+    suite : 'integration',
+  )
 endif
