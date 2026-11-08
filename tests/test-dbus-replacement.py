@@ -35,11 +35,11 @@ def bus_call(env, method, *args):
 
 def owner_pid(env):
     owner = bus_call(env, "GetNameOwner", "org.freedesktop.hostname1")
-    match = re.search(r"'(:[0-9]+\\.[0-9]+)'", owner)
+    match = re.search(r"'(:[0-9]+\.[0-9]+)'", owner)
     if not match:
         return None
     value = bus_call(env, "GetConnectionUnixProcessID", match.group(1))
-    match = re.search(r"(?:uint32\\s+)?([0-9]+)", value)
+    match = re.search(r"(?:uint32\s+)?([0-9]+)", value)
     return int(match.group(1)) if match else None
 
 
@@ -72,16 +72,16 @@ def main():
         log_path = directory / "hostnamed.log"
         config.write_text(
             '<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN" '
-            '"http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">\\n'
-            '<busconfig>\\n'
-            '  <type>system</type>\\n'
-            '  <listen>unix:path=' + str(socket) + '</listen>\\n'
-            '  <policy context="default">\\n'
-            '    <allow send_destination="*"/>\\n'
-            '    <allow receive_sender="*"/>\\n'
-            '    <allow own="*"/>\\n'
-            '  </policy>\\n'
-            '</busconfig>\\n',
+            '"http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">\n'
+            '<busconfig>\n'
+            '  <type>system</type>\n'
+            '  <listen>unix:path=' + str(socket) + '</listen>\n'
+            '  <policy context="default">\n'
+            '    <allow send_destination="*"/>\n'
+            '    <allow receive_sender="*"/>\n'
+            '    <allow own="*"/>\n'
+            '  </policy>\n'
+            '</busconfig>\n',
             encoding="utf-8",
         )
         env = os.environ.copy()
