@@ -1,5 +1,5 @@
 .\" Manpage for hostnamectl (hostnamed bash client)
-.TH HOSTNAMECTL 1 "October 2026" "hostnamed 0.3.1" "User Commands"
+.TH HOSTNAMECTL 1 "November 2026" "hostnamed 0.4.0" "User Commands"
 .SH NAME
 hostnamectl \- control the system hostname and related machine metadata
 .SH SYNOPSIS
@@ -110,7 +110,7 @@ hostnamectl status
 .EE
 .RE
 .PP
-Rename the machine entirely (static, transient, and pretty hostnames):
+Set the static and running hostname without changing the pretty hostname:
 .PP
 .RS
 .EX
@@ -200,7 +200,7 @@ firmware date fields shown in
 .BR machine-info (5),
 .BR os-release (5),
 .BR hostname (1),
- .BR inotify (7)
+.BR inotify (7)
 .SH AUTHOR
 Written by Nathaniel Russell.
 .PP

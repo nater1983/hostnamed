@@ -47,7 +47,14 @@ set -e
 rm -rf $PKG $TMP
 mkdir -p $TMP $PKG $OUTPUT
 cd $TMP
-cp -R $CWD/* .
+## Copy source without importing local Meson build trees or Git metadata.
+## This also works for release tarballs without a .git directory.
+tar -C "$CWD" \
+  --exclude='./.git' \
+  --exclude='./build' \
+  --exclude='./build-*' \
+  --exclude='./meson-build' \
+  -cf - . | tar -xf -
 
 chown -R root:root .
 find . -type f \( -perm -4000 -o -perm -2000 \) -exec chmod -s {} +

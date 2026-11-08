@@ -1,5 +1,5 @@
 .\" Manpage for hostnamed
-.TH HOSTNAMED 8 "October 2026" "hostnamed 0.3.1" "System Administration"
+.TH HOSTNAMED 8 "November 2026" "hostnamed 0.4.0" "System Administration"
 .SH NAME
 hostnamed \- D-Bus hostname management daemon for non-systemd Linux systems
 .SH SYNOPSIS
@@ -21,15 +21,16 @@ systems that use
 and a D-Bus/PolKit stack without systemd.
 .PP
 .B hostnamed
-does not poll or hold any files open for writing on its own initiative.
-Instead it watches its source files with
+does not hold configuration files open for writing on its own initiative.
+It watches configuration directories with
 .BR inotify (7)
-and re-reads them whenever they change, regardless of who changed them
+and refreshes their properties after changes, regardless of who changed them
 \(em the bundled
 .BR hostnamectl (1)
 client, a hand edit, or any other tool. After a resync it emits
 .B PropertiesChanged
-on the D-Bus object for every property whose value actually changed.
+on the D-Bus object for properties whose values actually changed.
+A periodic configuration-only reconciliation supplements file monitoring.
 .PP
 .B hostnamed
 is normally started on demand by D-Bus activation when a client first
@@ -169,8 +170,7 @@ if present.
 .TP
 .B HardwareVendor \fR(s)
 The hardware vendor, selected from available DMI product and board vendor
-fields, with a device-tree compatible-string fallback on platforms without
-DMI.
+fields, without using device-tree compatible strings as a vendor fallback.
 .TP
 .B HardwareModel \fR(s)
 The hardware model, selected from available DMI product and board name fields,
@@ -305,7 +305,7 @@ Returns a single JSON object containing the current value of every
 property listed above, for clients that prefer one bulk read over
 individual property gets. The bundled
 .BR hostnamectl (1)
-client uses this interface for changes; its status output currently reads
+client uses D-Bus setter methods for changes; its status output currently reads
 the underlying files directly.
 .PP
 For methods that take an
