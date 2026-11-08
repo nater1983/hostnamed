@@ -6,8 +6,8 @@ are issued. Requires dbus-daemon and gdbus.
 """
 import os
 import pathlib
+import re
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
@@ -52,6 +52,34 @@ def property_read(env):
     if not result.stdout.strip().startswith("(<"):
         return None
     return result.stdout.strip()
+
+
+
+def dbus_owner_pid(env):
+    """Ask the private bus which process currently owns the service."""
+    owner = subprocess.run(
+        ["gdbus", "call", "--system", "--dest", "org.freedesktop.DBus",
+         "--object-path", "/org/freedesktop/DBus", "--method",
+         "org.freedesktop.DBus.GetNameOwner", SERVICE],
+        env=env, capture_output=True, text=True, timeout=3,
+        check=False,
+    )
+    if owner.returncode != 0:
+        return None
+    match = re.search(r"'(:[0-9]+\\.[0-9]+)'", owner.stdout)
+    if not match:
+        return None
+    result = subprocess.run(
+        ["gdbus", "call", "--system", "--dest", "org.freedesktop.DBus",
+         "--object-path", "/org/freedesktop/DBus", "--method",
+         "org.freedesktop.DBus.GetConnectionUnixProcessID", match.group(1)],
+        env=env, capture_output=True, text=True, timeout=3,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    pid_match = re.search(r"(?:uint32\\s+)?([0-9]+)", result.stdout)
+    return int(pid_match.group(1)) if pid_match else None
 
 
 def main():
@@ -144,17 +172,13 @@ def main():
                         raise AssertionError("property changed across restart")
                     print("PASS: reconnect cycle " + str(cycle) +
                           ", PID " + str(pid) + ", property " + value, flush=True)
-                # Detect immediate duplicate name ownership/re-registration.
+                # Verify the private bus reports the same surviving owner PID.
                 time.sleep(0.5)
                 if daemon.poll() is not None:
                     raise AssertionError("hostnamed exited after reconnection")
-                log.flush()
-                logs = log_path.read_text(encoding="utf-8")
-                if logs.count("name acquired: " + SERVICE) != 3:
-                    raise AssertionError("unexpected number of name acquisitions")
-                if logs.count("D-Bus object registered at " + OBJECT) != 3:
-                    raise AssertionError("unexpected number of object registrations")
-                print("PASS: exactly three acquisitions and registrations", flush=True)
+                if dbus_owner_pid(env) != pid:
+                    raise AssertionError("D-Bus name is not owned by original PID")
+                print("PASS: D-Bus owner PID matches surviving daemon", flush=True)
                 return 0
             except Exception as exc:
                 print("FAIL: " + str(exc), file=sys.stderr)
