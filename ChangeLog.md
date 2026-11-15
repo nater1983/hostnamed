@@ -2,7 +2,19 @@
 
 All notable changes to `hostnamed` are documented here, newest release first.
 
-## [0.4.0] - Unreleased
+## [0.4.0] - 2026-11-15
+
+### Stable release
+- Released the validated 0.4.0 source at commit `61a93be`, after the
+  0.4.rc release candidate.
+- Completed final Slackware packaging validation, including the updated
+  `hostnamed.SlackBuild`.
+- Confirmed 12/12 Meson tests passed in normal and AddressSanitizer builds.
+  Leak detection was disabled for the reported ASan test run.
+- This entry records the stable release; the alpha, beta, and release-candidate
+  sections below document the changes at their respective milestones.
+
+## [0.4.rc] - Release candidate
 
 ### Runtime integration and regression coverage
 - Added private system-bus integration tests for reconnection after bus restart,
@@ -14,38 +26,46 @@ All notable changes to `hostnamed` are documented here, newest release first.
   clean exit status, and name release between successive daemon instances.
 - Disabled GDBus automatic process exit on connection closure so the daemon
   can handle system-bus reconnection through its own lifecycle logic.
-- Completed merged-branch regression testing on Slackware: 12/12 Meson tests
-  passed in both normal and AddressSanitizer configurations. ASan leak
-  detection was disabled for these runs.
+
+### Refactoring and release preparation
+- Separated configuration, D-Bus, hardware, and PolKit implementation into
+  dedicated source modules, while preserving existing daemon behavior.
+- Updated README, known-issues documentation, manual pages, and Slackware
+  packaging in preparation for the release candidate.
+
+## [0.4.beta] - Beta
 
 ### Configuration monitoring and refresh efficiency
+- Debounced configuration directory-monitor events before refreshing D-Bus properties.
+- Monitored `/etc/HOSTNAME`, `/etc/machine-info`, and the configured
+  `os-release` file, including atomic replacements.
+- Separated configuration refreshes from hardware discovery; configuration
+  updates reused cached DMI/device-tree identity.
+- Replaced the two-second full-property poll with a 30-second configuration-only
+  reconciliation safety net.
+- Added regression coverage for event-driven monitoring and hardware-refresh separation.
 
-- Debounce configuration directory-monitor events before refreshing D-Bus properties.
-- Monitor `/etc/HOSTNAME`, `/etc/machine-info`, and the configured `os-release` file, including atomic replacements.
-- Separate configuration refreshes from hardware discovery; configuration updates reuse cached DMI/device-tree identity.
-- Replace the two-second full-property poll with a 30-second configuration-only reconciliation safety net.
-- Add regression coverage for event-driven monitoring and hardware-refresh separation.
-
+## [0.4.alpha] - Alpha
 
 ### Configuration parsing and persistence
 - Replaced the simplistic KEY=value reader with a non-executing parser for
   quoted and unquoted assignments, comments, and escaped characters.
-- Ignore malformed assignments and retain last-valid-entry-wins behavior for
-  duplicate keys.
-- Escape backslashes and double quotes when serializing machine-info values.
-- Collapse duplicate valid assignments when updating a key while preserving
+- Ignored malformed assignments and retained last-valid-entry-wins behavior
+  for duplicate keys.
+- Escaped backslashes and double quotes when serializing machine-info values.
+- Collapsed duplicate valid assignments when updating a key while preserving
   comments, malformed lines, and unrelated settings.
-- Continue rejecting control characters and invalid UTF-8, and retain the
-  existing locked, atomic, root-owned configuration-file replacement path.
+- Continued rejecting control characters and invalid UTF-8, and retained the
+  locked, atomic, root-owned configuration-file replacement path.
 - Added configuration parsing and writer regression checks.
 
 ### D-Bus daemon lifecycle
 - Distinguished intentional D-Bus name takeovers from bus connection loss.
-- Exit cleanly when another live bus client takes ownership instead of
+- Exited cleanly when another live bus client took ownership instead of
   repeatedly attempting to reclaim the well-known name.
-- Retain delayed reconnection after a closed or unavailable bus connection,
+- Retained delayed reconnection after a closed or unavailable bus connection,
   independently of the initial `--replace` option.
-- Tear down the old D-Bus object registration before reconnecting and added
+- Tore down the old D-Bus object registration before reconnecting and added
   regression checks for ownership and reconnect decisions.
 
 ### PolKit authorization
@@ -58,7 +78,6 @@ All notable changes to `hostnamed` are documented here, newest release first.
   dedicated PolKit actions.
 - Added regression checks for the embedded and shipped D-Bus method
   signatures and interactive authorization wiring.
-
 
 ## [0.3.1] - 2026-10-21
 
